@@ -1,16 +1,17 @@
-FROM ubuntu:22.04
-
+# Build on top of parent_image - source code is already at /src
 ARG parent_image
+FROM ${parent_image}
+
 ARG CRS_TARGET
-ENV PARENT_IMAGE=${parent_image}
 ENV PROJECT_NAME=${CRS_TARGET}
 
 ENV TZ=US \
     DEBIAN_FRONTEND=noninteractive
 
-# Install Python, Docker CLI, and dependencies
+# Install additional dependencies for run.py
+# Docker CLI needed for run.py build_crs (builds internal CRS images)
 RUN apt-get update -y && apt-get install -y \
-    git python3 python3-pip curl pigz rsync \
+    python3-pip curl pigz rsync \
     ca-certificates gnupg \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
@@ -28,7 +29,7 @@ COPY . /crs-multilang
 # Copy oss-fuzz project files from additional_contexts (provided by oss-crs)
 COPY --from=project . /crs-multilang/libs/oss-fuzz/projects/${CRS_TARGET}/
 
-WORKDIR /workspace
+WORKDIR /crs-multilang
 
 COPY oss-crs/build.sh /build.sh
 RUN chmod +x /build.sh

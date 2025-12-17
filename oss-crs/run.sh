@@ -31,7 +31,6 @@ done
 
 # Set environment variables for docker-compose
 export HARNESS_NAME="$HARNESS_NAME"
-export TARBALL_DIR="/out/tarballs"
 export CPUSET_CPUS="${CPUSET_CPUS:-0-7}"
 export MEMORY_LIMIT="${MEMORY_LIMIT:-16G}"
 export LITELLM_URL="${LITELLM_URL:-}"

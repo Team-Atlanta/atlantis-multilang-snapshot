@@ -28,9 +28,10 @@ OSS_FUZZ = CUR_DIR / "libs/oss-fuzz"
 OSS_FUZZ_BUILD = OSS_FUZZ / "build/out/"
 OSS_FUZZ_WORK = OSS_FUZZ / "build/work/"
 OSS_FUZZ_HELPER = str(OSS_FUZZ / "infra/helper.py")
-# Host docker socket mode: when HOST_WORK_DIR/HOST_OUT_DIR are set, use them for docker volume mounts
+# Host docker socket mode: when HOST_WORK_DIR/HOST_OUT_DIR/HOST_ARTIFACT_DIR are set, use them for docker volume mounts
 HOST_WORK_DIR = os.environ.get("HOST_WORK_DIR")
 HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
+HOST_ARTIFACT_DIR = os.environ.get("HOST_ARTIFACT_DIR")
 SUPPORTED_LANGS = ["c", "c++", "cpp", "jvm"]
 CONCOLIC_COMMON_ADDITIONAL_ARGS = (
     " --engine none -e COMPILE_SYMCC=1 -e CLANG_CRASH_DIAGNOSTICS_DIR=/out"
@@ -417,10 +418,11 @@ class Target:
         self.silent = silent
         self.src_path = src_path
         self.target_path = OSS_FUZZ / "projects" / target_name
-        # When HOST_WORK_DIR is set (host docker socket mode), use /work as base
-        if HOST_WORK_DIR:
-            self.artifact_path = Path("/work") / "artifacts" / target_name
-            self.host_artifact_path = Path(HOST_WORK_DIR) / "artifacts" / target_name
+        # When HOST_ARTIFACT_DIR is set (host docker socket mode), use it directly
+        # Artifacts are separate from /work and /out, so --clean doesn't affect them
+        if HOST_ARTIFACT_DIR:
+            self.artifact_path = Path(HOST_ARTIFACT_DIR)
+            self.host_artifact_path = self.artifact_path  # Same path works on host and container
         else:
             self.artifact_path = OSS_FUZZ / "build/artifacts" / target_name
             self.host_artifact_path = self.artifact_path
@@ -463,8 +465,8 @@ class Target:
     def fuzzer_dir(self):
         """Returns the fuzzer output dir for local file operations."""
         if HOST_OUT_DIR:
-            # When HOST_OUT_DIR is set, /out is the mount point inside the container
-            return Path("/out")
+            # When HOST_OUT_DIR is set, use it directly (same path on host and container)
+            return Path(HOST_OUT_DIR)
         return OSS_FUZZ_BUILD / self.name
 
     def host_fuzzer_dir(self):
@@ -476,30 +478,30 @@ class Target:
     def work_dir(self):
         """Returns the work dir for local file operations."""
         if HOST_WORK_DIR:
-            # When HOST_WORK_DIR is set, /work is the mount point inside the container
-            return Path("/work")
+            # When HOST_WORK_DIR is set, use it directly (same path on host and container)
+            return Path(HOST_WORK_DIR)
         return OSS_FUZZ_WORK / self.name
 
     def __coverage_dir(self):
-        # When HOST_OUT_DIR is set, use subdirectory of /out instead of sibling
+        # When HOST_OUT_DIR is set, use subdirectory of HOST_OUT_DIR
         if HOST_OUT_DIR:
-            return Path("/out/coverage")
+            return Path(HOST_OUT_DIR) / "coverage"
         return Path(str(self.fuzzer_dir()) + "-coverage")
 
     def __lsp_dir(self):
         if HOST_OUT_DIR:
-            return Path("/out/lsp")
+            return Path(HOST_OUT_DIR) / "lsp"
         return Path(str(self.fuzzer_dir()) + "-lsp")
 
     def __symcc_dir(self):
         if HOST_OUT_DIR:
-            return Path("/out/symcc")
+            return Path(HOST_OUT_DIR) / "symcc"
         suffix = "symcc"
         return Path(str(self.fuzzer_dir()) + f"-{suffix}")
 
     def __symcc_bin_dir(self):
         if HOST_OUT_DIR:
-            return Path("/out/symcc-bin")
+            return Path(HOST_OUT_DIR) / "symcc-bin"
         return Path(str(self.fuzzer_dir()) + "-symcc-bin")
 
     def __run_cmd(
@@ -1043,6 +1045,7 @@ class Target:
         fail_symcc=False,
         coverage_harness=False,
     ) -> str:
+        # Always use --clean - artifacts are in separate HOST_ARTIFACT_DIR, not affected by clean
         cmd = f"python3 {OSS_FUZZ_HELPER} build_fuzzers --clean"
         if is_test:
             cmd += " -e CRS_TEST=True"
@@ -1053,9 +1056,7 @@ class Target:
         if coverage_harness:
             cmd += " --sanitizer coverage"
         cmd = cmd.split(" ")
-        # Convert container path to host path for Docker volume mounts
-        host_src = self.to_host_path(src)
-        cmd += [self.name, host_src]
+        cmd += [self.name, str(src)]
         return cmd
 
     def __run_build(

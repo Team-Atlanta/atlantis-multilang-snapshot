@@ -23,6 +23,14 @@ echo "Creating repo.tar.gz from $SOURCE_DIR..."
 mkdir -p /out/tarballs
 tar -czf /out/tarballs/repo.tar.gz -C "$SOURCE_DIR" .
 
+# Also copy to artifact tarball location for create_conf (which mounts from there)
+if [ -n "${HOST_ARTIFACT_DIR:-}" ]; then
+    ARTIFACT_TARBALL_DIR="$HOST_ARTIFACT_DIR/tarballs"
+    echo "Copying repo.tar.gz to artifact location: $ARTIFACT_TARBALL_DIR"
+    mkdir -p "$ARTIFACT_TARBALL_DIR"
+    cp /out/tarballs/repo.tar.gz "$ARTIFACT_TARBALL_DIR/"
+fi
+
 # Step 3: Build CRS docker images using run.py build_crs
 echo "Building CRS docker images via run.py build_crs..."
 python3 run.py build_crs

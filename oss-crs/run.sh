@@ -4,7 +4,7 @@ set -eu
 HARNESS_NAME="$1"
 shift || true
 
-echo "=== CRS-Multilang Run Phase ==="
+echo "=== CRS-Multilang Run Phase (DinD) ==="
 echo "Harness: $HARNESS_NAME"
 echo "Environment:"
 echo "  CPUSET_CPUS: ${CPUSET_CPUS:-not set}"
@@ -14,31 +14,25 @@ echo "  RUN_FUZZER_MODE: ${RUN_FUZZER_MODE:-not set}"
 # Start Docker daemon (provided by cruizba/ubuntu-dind)
 start-docker.sh
 
-# Wait for Docker to be ready
 echo "Waiting for Docker daemon..."
 while ! docker info > /dev/null 2>&1; do
     sleep 1
 done
 echo "Docker daemon ready"
 
-# Load images from /cache/images (mounted via config-crs.yaml volumes)
-# Prefer .tar over .tar.gz for speed
-load_runner_image() {
-    local base_name="$1"
-    if [ -f "/cache/images/${base_name}.tar" ]; then
-        docker load -i "/cache/images/${base_name}.tar"
-    elif [ -f "/cache/images/${base_name}.tar.gz" ]; then
-        docker load -i "/cache/images/${base_name}.tar.gz"
+# Load images from /out/images (saved by builder)
+echo "Loading images from /out/images/..."
+IMAGES_DIR=/out/images
+
+for img in crs-multilang multilang-runner-joern redis; do
+    if [ -f "$IMAGES_DIR/${img}.tar" ]; then
+        echo "Loading ${img}.tar..."
+        docker load -i "$IMAGES_DIR/${img}.tar"
     else
-        echo "ERROR: Image not found: $base_name (.tar or .tar.gz)"
+        echo "ERROR: Image not found: $IMAGES_DIR/${img}.tar"
         exit 1
     fi
-}
-
-echo "Loading images from /cache/images/..."
-load_runner_image "crs-multilang"
-load_runner_image "multilang-runner-joern"
-load_runner_image "redis"
+done
 
 # Set environment variables for docker-compose
 export HARNESS_NAME="$HARNESS_NAME"

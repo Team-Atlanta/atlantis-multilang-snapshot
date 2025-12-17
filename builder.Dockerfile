@@ -1,4 +1,4 @@
-FROM cruizba/ubuntu-dind
+FROM ubuntu:22.04
 
 ARG parent_image
 ARG CRS_TARGET
@@ -8,27 +8,28 @@ ENV PROJECT_NAME=${CRS_TARGET}
 ENV TZ=US \
     DEBIAN_FRONTEND=noninteractive
 
-# Install Python and dependencies for run.py
+# Install Python, Docker CLI, and dependencies
 RUN apt-get update -y && apt-get install -y \
     git python3 python3-pip curl pigz rsync \
+    ca-certificates gnupg \
+    && install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
+    && chmod a+r /etc/apt/keyrings/docker.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update -y \
+    && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --break-system-packages coloredlogs pyyaml python-on-whales
 
-# Copy full crs-multilang source (NOT to WORKDIR - oss-crs overwrites WORKDIR with project source)
-# Cache is excluded via .dockerignore and mounted at runtime via volumes in config-crs.yaml
+# Copy full crs-multilang source
 COPY . /crs-multilang
 
 # Copy oss-fuzz project files from additional_contexts (provided by oss-crs)
 COPY --from=project . /crs-multilang/libs/oss-fuzz/projects/${CRS_TARGET}/
 
-# Cache mounted at runtime via volumes in config-crs.yaml: ${CRS_CACHE_DIR}:/cache/images:ro
-ENV CRS_CACHE_DIR=/cache/images
-
-# Set WORKDIR to /workspace (oss-crs will copy project source here, not to /crs-multilang)
 WORKDIR /workspace
 
-# Copy build script
 COPY oss-crs/build.sh /build.sh
 RUN chmod +x /build.sh
 

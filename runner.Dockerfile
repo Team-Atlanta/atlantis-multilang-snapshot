@@ -1,7 +1,8 @@
 FROM cruizba/ubuntu-dind
 
 ENV TZ=US \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    CRS_CACHE_DIR=/cache/images
 
 RUN apt-get update -y && apt-get install -y \
     python3 python3-pip curl \

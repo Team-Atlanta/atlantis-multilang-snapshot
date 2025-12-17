@@ -21,22 +21,23 @@ while ! docker info > /dev/null 2>&1; do
 done
 echo "Docker daemon ready"
 
-# Load images from /out/images/ (prefer .tar over .tar.gz for speed)
+# Load images from /cache/images (mounted via config-crs.yaml volumes)
+# Prefer .tar over .tar.gz for speed
 load_runner_image() {
     local base_name="$1"
-    if [ -f "/out/images/${base_name}.tar" ]; then
-        docker load -i "/out/images/${base_name}.tar"
-    elif [ -f "/out/images/${base_name}.tar.gz" ]; then
-        docker load -i "/out/images/${base_name}.tar.gz"
+    if [ -f "/cache/images/${base_name}.tar" ]; then
+        docker load -i "/cache/images/${base_name}.tar"
+    elif [ -f "/cache/images/${base_name}.tar.gz" ]; then
+        docker load -i "/cache/images/${base_name}.tar.gz"
     else
         echo "ERROR: Image not found: $base_name (.tar or .tar.gz)"
         exit 1
     fi
 }
 
-echo "Loading images from /out/images/..."
+echo "Loading images from /cache/images/..."
 load_runner_image "crs-multilang"
-load_runner_image "joern"
+load_runner_image "multilang-runner-joern"
 load_runner_image "redis"
 
 # Set environment variables for docker-compose

@@ -46,4 +46,7 @@ services:
 
 networks:
   crs-network:
-    driver: bridge
+    # Use external network if CRS_EXTERNAL_NETWORK is set (for LiteLLM connectivity)
+    # Otherwise create a local bridge network
+    name: ${CRS_EXTERNAL_NETWORK:-crs-multilang-network}
+    external: ${CRS_NETWORK_EXTERNAL:-false}

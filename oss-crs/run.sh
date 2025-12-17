@@ -47,6 +47,15 @@ export CRS_NAME="${CRS_NAME:-crs-multilang}"
 # If not set, defaults to /out (for DinD mode compatibility)
 export HOST_OUT_DIR="${HOST_OUT_DIR:-/out}"
 
+# If CRS_EXTERNAL_NETWORK is set, use it as external network for LiteLLM connectivity
+if [ -n "${CRS_EXTERNAL_NETWORK:-}" ]; then
+    echo "Using external network: $CRS_EXTERNAL_NETWORK"
+    export CRS_NETWORK_EXTERNAL="true"
+else
+    echo "Using local bridge network"
+    export CRS_NETWORK_EXTERNAL="false"
+fi
+
 # Generate crs.config and set HOST_CRS_CONFIG for docker-compose
 HOST_CRS_CONFIG="${HOST_OUT_DIR}/crs.config"
 cat > /out/crs.config << EOF
@@ -64,8 +73,22 @@ echo "Generated crs.config at $HOST_CRS_CONFIG:"
 cat /out/crs.config
 
 # Start all services with docker compose
-echo "Starting services with docker compose..."
-cd /app
-docker compose up --abort-on-container-exit
+# Use unique project name to avoid conflicts when running multiple instances
+COMPOSE_PROJECT="${CRS_TARGET:-crs}_${HARNESS_NAME}"
+export COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT"
 
-echo "=== Run complete ==="
+echo "Starting services with docker compose (project: $COMPOSE_PROJECT)..."
+cd /app
+
+# Run and capture exit code
+set +e
+docker compose up --abort-on-container-exit --exit-code-from crs
+EXIT_CODE=$?
+set -e
+
+# Cleanup containers
+echo "Cleaning up containers..."
+docker compose down --remove-orphans 2>/dev/null || true
+
+echo "=== Run complete (exit code: $EXIT_CODE) ==="
+exit $EXIT_CODE

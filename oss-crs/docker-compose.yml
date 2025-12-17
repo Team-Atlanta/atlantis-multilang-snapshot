@@ -3,6 +3,7 @@ version: '3.8'
 services:
   redis:
     image: redis:latest
+    container_name: redis_${SAFE_TARGET}_${SAFE_HARNESS}
     command: redis-server --appendonly yes
     restart: unless-stopped
     networks:
@@ -10,6 +11,7 @@ services:
 
   joern:
     image: crs-multilang/multilang-runner-joern:latest
+    container_name: joern_${SAFE_TARGET}_${SAFE_HARNESS}
     volumes:
       - ${HOST_OUT_DIR:-/out}:/tarballs:ro
     depends_on:
@@ -19,7 +21,10 @@ services:
 
   crs:
     image: crs-multilang/crs-multilang:latest
+    container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
     privileged: true
+    cpuset: ${CPUSET_CPUS:-0-7}
+    mem_limit: ${MEMORY_LIMIT:-16G}
     environment:
       - TARBALL_DIR=/tarballs
       - CRS_CONFIG=/crs.config

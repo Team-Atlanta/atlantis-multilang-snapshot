@@ -1282,7 +1282,7 @@ class CP_Builder:
             pass
         self.rsync(tmp, dst)
 
-    def build_for_multilang(self, out_dir):
+    def build_for_multilang(self, out_dir, start_other_services=False):
         self.__prepare_ossfuzz()
         src_dir, diff_path = self.__prepare_repo()
         target = Target(self.target, src_path=src_dir)
@@ -1308,7 +1308,7 @@ class CP_Builder:
         self.__start_lsp(target)
         target.build_coverage_only({})
         self.__finalize_tarball(target, out_dir, "coverage")
-        target.run({"init_codeindexer": True})
+        target.run({"init_codeindexer": True, "start_other_services": start_other_services})
 
     def build_for_symcc(self, out_dir):
         self.__prepare_ossfuzz()
@@ -1482,7 +1482,10 @@ def main_build(args):
     if args["symcc"]:
         return builder.build_for_symcc(out_dir)
     else:
-        return builder.build_for_multilang(args["out_dir"])
+        return builder.build_for_multilang(
+            args["out_dir"],
+            start_other_services=args.get("start_other_services", False),
+        )
 
 
 def add_run_args(parser):
@@ -1764,6 +1767,12 @@ if __name__ == "__main__":
     parser_build.add_argument(
         "--symcc",
         help="Build symcc",
+        action="store_true",
+        default=False,
+    )
+    parser_build.add_argument(
+        "--start-other-services",
+        help="start other services (redis for codeindexer)",
         action="store_true",
         default=False,
     )

@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:latest
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - crs-network
+
+  joern:
+    image: multilang-runner-joern:latest
+    volumes:
+      - /out/tarballs:/tarballs:ro
+    depends_on:
+      - redis
+    networks:
+      - crs-network
+
+  crs:
+    image: crs-multilang:latest
+    privileged: true
+    environment:
+      - TARBALL_DIR=/tarballs
+      - CRS_CONFIG=/crs.config
+      - LITELLM_URL=${LITELLM_URL:-}
+      - LITELLM_KEY=${LITELLM_KEY:-}
+      - CPUSET_CPUS=${CPUSET_CPUS:-0-7}
+      - FUZZING_ENGINE=libfuzzer
+      - SANITIZER=address
+      - CODE_INDEXER_REDIS_URL=redis://redis:6379
+      - DICTGEN_REDIS_URL=redis://redis:6379
+      - JOERN_URL=http://joern:9909
+    volumes:
+      - /out/tarballs:/tarballs:ro
+      - /out:/out
+      - /tmp/crs.config:/crs.config:ro
+    depends_on:
+      - redis
+      - joern
+    networks:
+      - crs-network
+    command: ["run_crs"]
+
+networks:
+  crs-network:
+    driver: bridge

@@ -7,17 +7,17 @@ services:
     command: redis-server --appendonly yes
     restart: unless-stopped
     networks:
-      - crs-network
+      - crs-internal
 
   joern:
     image: crs-multilang/multilang-runner-joern:latest
     container_name: joern_${SAFE_TARGET}_${SAFE_HARNESS}
     volumes:
-      - ${HOST_OUT_DIR:-/out}/tarballs:/tarballs:ro
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
     depends_on:
       - redis
     networks:
-      - crs-network
+      - crs-internal
 
   crs:
     image: crs-multilang/crs-multilang:latest
@@ -26,6 +26,7 @@ services:
     cpuset: ${CPUSET_CPUS:-0-7}
     mem_limit: ${MEMORY_LIMIT:-16G}
     environment:
+      - PYTHONUNBUFFERED=1
       - TARBALL_DIR=/tarballs
       - CRS_CONFIG=/crs.config
       - LITELLM_URL=${LITELLM_URL:-}
@@ -35,23 +36,32 @@ services:
       - SANITIZER=${SANITIZER:-address}
       - CRS_TARGET=${CRS_TARGET:-}
       - CRS_NAME=${CRS_NAME:-crs-multilang}
+      # Use service names - they resolve on crs-internal network (project-scoped)
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909
     volumes:
-      - ${HOST_OUT_DIR:-/out}/tarballs:/tarballs:ro
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
       - ${HOST_OUT_DIR:-/out}:/out
       - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
     depends_on:
       - redis
       - joern
     networks:
-      - crs-network
+      # Internal network for redis/joern communication (project-scoped, isolated)
+      - crs-internal
+      # External network for LiteLLM connectivity (optional, shared)
+      - crs-external
     command: ["run_crs"]
 
 networks:
-  crs-network:
-    # Use external network if CRS_EXTERNAL_NETWORK is set (for LiteLLM connectivity)
-    # Otherwise create a local bridge network
+  # Internal network: Always created, project-scoped, isolated per project/harness
+  # Service names (redis, joern) resolve within this network without collision
+  crs-internal:
+    driver: bridge
+
+  # External network: For LiteLLM connectivity
+  # Only CRS joins this network to reach LiteLLM
+  crs-external:
     name: ${CRS_EXTERNAL_NETWORK:-crs-multilang-network}
     external: ${CRS_NETWORK_EXTERNAL:-false}

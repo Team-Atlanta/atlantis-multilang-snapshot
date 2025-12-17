@@ -779,7 +779,7 @@ def register_submit_db_watchdog(crs):
 
 
 def wait_redis(redis_url):
-    r = Redis(redis_url)
+    r = Redis.from_url(redis_url)
     while True:
         try:
             if r.ping():

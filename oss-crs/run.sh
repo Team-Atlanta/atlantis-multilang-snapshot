@@ -47,13 +47,24 @@ export CRS_NAME="${CRS_NAME:-crs-multilang}"
 # If not set, defaults to /out (for DinD mode compatibility)
 export HOST_OUT_DIR="${HOST_OUT_DIR:-/out}"
 
-# If CRS_EXTERNAL_NETWORK is set, use it as external network for LiteLLM connectivity
+# HOST_ARTIFACT_DIR contains tarballs (created by builder phase)
+# If not set, defaults to HOST_OUT_DIR for backward compatibility
+export HOST_ARTIFACT_DIR="${HOST_ARTIFACT_DIR:-$HOST_OUT_DIR}"
+
+# Network configuration:
+# - crs-internal: Always created, project-scoped, isolated per project/harness
+# - crs-external: For LiteLLM connectivity
+#   - If CRS_EXTERNAL_NETWORK is set: join the existing external network (for oss-crs)
+#   - If not set: create a local network (for standalone testing)
 if [ -n "${CRS_EXTERNAL_NETWORK:-}" ]; then
-    echo "Using external network: $CRS_EXTERNAL_NETWORK"
+    echo "Using external network for LiteLLM: $CRS_EXTERNAL_NETWORK"
     export CRS_NETWORK_EXTERNAL="true"
+    # CRS_EXTERNAL_NETWORK is already set by the caller
 else
-    echo "Using local bridge network"
+    echo "Using local networks (standalone mode)"
     export CRS_NETWORK_EXTERNAL="false"
+    # Create a unique local network name per project/harness to avoid conflicts
+    # This will be overwritten after SAFE_TARGET/SAFE_HARNESS are computed below
 fi
 
 # Sanitize names for docker compose project/container naming (replace special chars with underscore)
@@ -67,6 +78,13 @@ SAFE_HARNESS=$(sanitize_name "$HARNESS_NAME")
 # Keep original CRS_TARGET and HARNESS_NAME for CRS internal use
 export SAFE_TARGET
 export SAFE_HARNESS
+
+# Set unique external network name for standalone mode (after SAFE_TARGET/SAFE_HARNESS are computed)
+if [ "${CRS_NETWORK_EXTERNAL}" = "false" ]; then
+    # Use unique network name per project/harness to avoid conflicts
+    export CRS_EXTERNAL_NETWORK="${SAFE_TARGET}_${SAFE_HARNESS}_external"
+    echo "External network (local): $CRS_EXTERNAL_NETWORK"
+fi
 
 # Generate harness-specific crs.config to avoid conflicts with concurrent runs
 HOST_CRS_CONFIG="${HOST_OUT_DIR}/crs.config.${SAFE_HARNESS}"

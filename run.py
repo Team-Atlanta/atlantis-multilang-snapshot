@@ -1287,6 +1287,8 @@ class CP_Builder:
         src_dir, diff_path = self.__prepare_repo()
         target = Target(self.target, src_path=src_dir)
         self.__pull_multilang_builder_imgs(target.language)
+        # Build fuzzers (creates repo.tar.gz, fuzzers.tar.gz, project.tar.gz)
+        target.build({})
         target.run({"create_conf": "/out/aixcc_conf.yaml"})
         conf_src = target.fuzzer_dir() / "aixcc_conf.yaml"
         conf_dst = target.tarball_dir / "aixcc_conf.yaml"
@@ -1304,9 +1306,8 @@ class CP_Builder:
             """
         self.rsync(str(target.tarball_dir) + "/", out_dir)
         self.touch_done(f"{out_dir / 'DONE'}")
-        target.build_lsp({})
+        # LSP and coverage already built by target.build(), just start LSP and finalize
         self.__start_lsp(target)
-        target.build_coverage_only({})
         self.__finalize_tarball(target, out_dir, "coverage")
         target.run({"init_codeindexer": True, "start_other_services": start_other_services})
 

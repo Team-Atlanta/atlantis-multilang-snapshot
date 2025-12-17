@@ -29,7 +29,8 @@ COPY . /crs-multilang
 # Copy oss-fuzz project files from additional_contexts (provided by oss-crs)
 COPY --from=project . /crs-multilang/libs/oss-fuzz/projects/${CRS_TARGET}/
 
-WORKDIR /crs-multilang
+# Keep WORKDIR as parent's (e.g., /src/PROJECT_NAME) - oss-crs may copy local source here
+# build.sh does `cd /crs-multilang` to run CRS code
 
 COPY oss-crs/build.sh /build.sh
 RUN chmod +x /build.sh

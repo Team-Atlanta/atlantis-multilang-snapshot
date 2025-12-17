@@ -14,9 +14,14 @@ if ! docker info > /dev/null 2>&1; then
 fi
 echo "Docker daemon accessible via host socket"
 
-# Step 2: Load the project image from tarball (provided by oss-crs)
-echo "Loading project image from /project-image.tar..."
-docker load -i /project-image.tar
+# Step 2: Verify parent image exists on host daemon
+# With host docker socket, the image is already on the host - no need to load from tarball
+if ! docker image inspect "$PARENT_IMAGE" > /dev/null 2>&1; then
+    echo "ERROR: Parent image not found: $PARENT_IMAGE"
+    echo "Ensure oss-crs has built the project image before running CRS build."
+    exit 1
+fi
+echo "Parent image found: $PARENT_IMAGE"
 
 # Step 3: Extract source code from parent image
 # Use HOST paths for docker volume mounts when HOST_OUT_DIR is set

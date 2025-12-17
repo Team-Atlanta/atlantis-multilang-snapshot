@@ -62,20 +62,22 @@ python3 run.py build \
     --skip-symcc-verification \
     --start-other-services
 
-# Step 6: Create tarballs for CRS runner
-echo "Creating tarballs for CRS runner..."
-cd /out && tar -cvzf "$TARBALL_DIR/fuzzers.tar.gz" . && cd /crs-multilang
+# Step 6: Copy tarballs for CRS runner
+# run.py already creates fuzzers.tar.gz in /out, just copy it to tarballs/
+echo "Copying tarballs for CRS runner..."
+cp /out/fuzzers.tar.gz "$TARBALL_DIR/fuzzers.tar.gz"
 
 # Create project.tar.gz from the actual project directory (contains project.yaml, .aixcc/, etc.)
+# This is more complete than what run.py creates
 PROJECT_DIR="/crs-multilang/libs/oss-fuzz/projects/${PROJECT_NAME}"
 if [ -d "$PROJECT_DIR" ]; then
     echo "Creating project.tar.gz from $PROJECT_DIR..."
-    cd "$PROJECT_DIR" && tar -cvzf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
+    cd "$PROJECT_DIR" && tar -czf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
 else
     echo "WARNING: Project directory not found at $PROJECT_DIR, creating empty project.tar.gz"
     mkdir -p /tmp/empty_project
     touch /tmp/empty_project/.placeholder
-    cd /tmp/empty_project && tar -cvzf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
+    cd /tmp/empty_project && tar -czf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
 fi
 
 # Pull redis if not present (runner will use it directly from host daemon)

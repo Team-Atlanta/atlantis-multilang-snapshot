@@ -20,7 +20,8 @@ echo "Docker daemon accessible via host socket"
 
 # Step 2: Create repo.tar.gz from source
 echo "Creating repo.tar.gz from $SOURCE_DIR..."
-tar -czf /out/repo.tar.gz -C "$SOURCE_DIR" .
+mkdir -p /out/tarballs
+tar -czf /out/tarballs/repo.tar.gz -C "$SOURCE_DIR" .
 
 # Step 3: Build CRS docker images using run.py build_crs
 echo "Building CRS docker images via run.py build_crs..."
@@ -42,7 +43,7 @@ docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
 echo "Building fuzzers via run.py build..."
 python3 run.py build \
     --target "$PROJECT_NAME" \
-    --tar-dir /out \
+    --tar-dir /out/tarballs \
     --out-dir /out \
     --focus "" \
     --registry local \

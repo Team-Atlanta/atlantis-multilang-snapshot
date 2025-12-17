@@ -570,6 +570,19 @@ class Target:
         except:
             return None
 
+    def to_host_path(self, container_path):
+        """Convert container path to host path for Docker volume mounts.
+
+        When using host Docker socket, paths like /work/... need to be
+        converted to HOST_WORK_DIR/... for Docker volume mounts.
+        """
+        container_path = str(container_path)
+        if HOST_WORK_DIR and container_path.startswith("/work/"):
+            return container_path.replace("/work/", HOST_WORK_DIR + "/", 1)
+        if HOST_OUT_DIR and container_path.startswith("/out/"):
+            return container_path.replace("/out/", HOST_OUT_DIR + "/", 1)
+        return container_path
+
     def load_src(self, dir_name="repo"):
         src = self.artifact_path / dir_name
         if self.src_path != None:
@@ -1040,7 +1053,9 @@ class Target:
         if coverage_harness:
             cmd += " --sanitizer coverage"
         cmd = cmd.split(" ")
-        cmd += [self.name, src]
+        # Convert container path to host path for Docker volume mounts
+        host_src = self.to_host_path(src)
+        cmd += [self.name, host_src]
         return cmd
 
     def __run_build(

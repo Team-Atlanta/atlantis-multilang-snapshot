@@ -9,16 +9,16 @@ services:
       - crs-network
 
   joern:
-    image: multilang-runner-joern:latest
+    image: crs-multilang/multilang-runner-joern:latest
     volumes:
-      - /out/tarballs:/tarballs:ro
+      - ${HOST_OUT_DIR:-/out}/tarballs:/tarballs:ro
     depends_on:
       - redis
     networks:
       - crs-network
 
   crs:
-    image: crs-multilang:latest
+    image: crs-multilang/crs-multilang:latest
     privileged: true
     environment:
       - TARBALL_DIR=/tarballs
@@ -34,9 +34,9 @@ services:
       - DICTGEN_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909
     volumes:
-      - /out/tarballs:/tarballs:ro
-      - /out:/out
-      - /tmp/crs.config:/crs.config:ro
+      - ${HOST_OUT_DIR:-/out}/tarballs:/tarballs:ro
+      - ${HOST_OUT_DIR:-/out}:/out
+      - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
     depends_on:
       - redis
       - joern

@@ -4,34 +4,29 @@ set -eu
 HARNESS_NAME="$1"
 shift || true
 
-echo "=== CRS-Multilang Run Phase (DinD) ==="
+echo "=== CRS-Multilang Run Phase (Host Docker) ==="
 echo "Harness: $HARNESS_NAME"
 echo "Environment:"
 echo "  CPUSET_CPUS: ${CPUSET_CPUS:-not set}"
 echo "  MEMORY_LIMIT: ${MEMORY_LIMIT:-not set}"
 echo "  RUN_FUZZER_MODE: ${RUN_FUZZER_MODE:-not set}"
 
-# Start Docker daemon (provided by cruizba/ubuntu-dind)
-start-docker.sh
+# Verify Docker socket is available (using host docker daemon)
+if ! docker info > /dev/null 2>&1; then
+    echo "ERROR: Docker socket not available. Ensure /var/run/docker.sock is mounted."
+    exit 1
+fi
+echo "Docker daemon accessible via host socket"
 
-echo "Waiting for Docker daemon..."
-while ! docker info > /dev/null 2>&1; do
-    sleep 1
-done
-echo "Docker daemon ready"
-
-# Load images from /out/images (saved by builder)
-echo "Loading images from /out/images/..."
-IMAGES_DIR=/out/images
-
-for img in crs-multilang multilang-runner-joern redis; do
-    if [ -f "$IMAGES_DIR/${img}.tar" ]; then
-        echo "Loading ${img}.tar..."
-        docker load -i "$IMAGES_DIR/${img}.tar"
-    else
-        echo "ERROR: Image not found: $IMAGES_DIR/${img}.tar"
+# Verify required images exist on host daemon (built by builder phase)
+echo "Verifying images on host docker daemon..."
+for img in crs-multilang/crs-multilang:latest crs-multilang/multilang-runner-joern:latest redis:latest; do
+    if ! docker image inspect "$img" > /dev/null 2>&1; then
+        echo "ERROR: Image not found: $img"
+        echo "Ensure builder phase completed successfully."
         exit 1
     fi
+    echo "  Found: $img"
 done
 
 # Set environment variables for docker-compose
@@ -49,8 +44,13 @@ fi
 export CRS_TARGET="${CRS_TARGET:-}"
 export CRS_NAME="${CRS_NAME:-crs-multilang}"
 
-# Generate crs.config for given_fuzzer mode
-cat > /tmp/crs.config << EOF
+# HOST_OUT_DIR is used for docker volume mounts when using host docker socket
+# If not set, defaults to /out (for DinD mode compatibility)
+export HOST_OUT_DIR="${HOST_OUT_DIR:-/out}"
+
+# Generate crs.config and set HOST_CRS_CONFIG for docker-compose
+HOST_CRS_CONFIG="${HOST_OUT_DIR}/crs.config"
+cat > /out/crs.config << EOF
 {
     "target_harnesses": ["${HARNESS_NAME}"],
     "modules": ["uniafl"],
@@ -60,12 +60,13 @@ cat > /tmp/crs.config << EOF
 }
 EOF
 
-echo "Generated /tmp/crs.config:"
-cat /tmp/crs.config
+export HOST_CRS_CONFIG
+echo "Generated crs.config at $HOST_CRS_CONFIG:"
+cat /out/crs.config
 
-# Start all services with docker-compose
-echo "Starting services with docker-compose..."
+# Start all services with docker compose
+echo "Starting services with docker compose..."
 cd /app
-docker-compose up --abort-on-container-exit
+docker compose up --abort-on-container-exit
 
 echo "=== Run complete ==="

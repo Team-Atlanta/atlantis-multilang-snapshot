@@ -3,9 +3,9 @@ FROM ubuntu:22.04
 ENV TZ=US \
     DEBIAN_FRONTEND=noninteractive
 
-# Install Python, Docker CLI (no daemon - uses host docker socket)
+# Install Docker CLI and compose plugin (uses host docker socket)
 RUN apt-get update -y && apt-get install -y \
-    python3 python3-pip curl ca-certificates gnupg \
+    curl ca-certificates gnupg \
     && install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
     && chmod a+r /etc/apt/keyrings/docker.gpg \
@@ -13,8 +13,6 @@ RUN apt-get update -y && apt-get install -y \
     && apt-get update -y \
     && apt-get install -y docker-ce-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install pyyaml
 
 WORKDIR /app
 COPY oss-crs/run.sh /app/run.sh

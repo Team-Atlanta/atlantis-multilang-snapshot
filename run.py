@@ -315,7 +315,7 @@ def run(
     if cwd == None:
         cwd = os.getcwd()
     cwd = str(cwd)
-    # interactive=True
+    interactive=True
     if interactive:
         ret = subprocess.run(cmd, check=False, cwd=cwd)
         if ret.returncode != 0 and not error_ok:
@@ -1375,6 +1375,10 @@ class CP_Builder:
 
     def __pull_multilang_builder_imgs(self, language):
         self.__wait_docker()
+        # Skip pulling if registry is "local" - images are already loaded
+        if self.registry == "local":
+            self.log("Registry is 'local', skipping image pull (images should be pre-loaded)")
+            return
         self.__pull_img("crs-multilang/crs-multilang")
         self.__pull_img("crs-multilang/multilang-lsp-base")
         if language == "jvm":

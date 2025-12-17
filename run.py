@@ -28,10 +28,26 @@ OSS_FUZZ = CUR_DIR / "libs/oss-fuzz"
 OSS_FUZZ_BUILD = OSS_FUZZ / "build/out/"
 OSS_FUZZ_WORK = OSS_FUZZ / "build/work/"
 OSS_FUZZ_HELPER = str(OSS_FUZZ / "infra/helper.py")
-# Host docker socket mode: when HOST_WORK_DIR/HOST_OUT_DIR/HOST_ARTIFACT_DIR are set, use them for docker volume mounts
+# Execution Mode Detection:
+#
+# This script can run in two modes:
+#
+# 1. HOST MODE (original): run.py executes on the host machine
+#    - Uses OSS_FUZZ paths directly (e.g., /home/user/crs-multilang/libs/oss-fuzz/...)
+#    - Docker volume mounts work because paths exist on host
+#    - HOST_*_DIR env vars are NOT set
+#
+# 2. CONTAINER MODE (oss-crs integration): run.py executes inside a builder container
+#    - Container paths (e.g., /crs-multilang/...) don't exist on host
+#    - Uses host Docker socket, so Docker daemon runs on host
+#    - HOST_*_DIR env vars provide actual host paths for Docker volume mounts
+#    - Same-path mounts make these host paths accessible inside container
+#
 HOST_WORK_DIR = os.environ.get("HOST_WORK_DIR")
 HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
 HOST_ARTIFACT_DIR = os.environ.get("HOST_ARTIFACT_DIR")
+# True when running inside container with host Docker socket
+CONTAINER_MODE = HOST_WORK_DIR is not None
 SUPPORTED_LANGS = ["c", "c++", "cpp", "jvm"]
 CONCOLIC_COMMON_ADDITIONAL_ARGS = (
     " --engine none -e COMPILE_SYMCC=1 -e CLANG_CRASH_DIAGNOSTICS_DIR=/out"
@@ -418,17 +434,17 @@ class Target:
         self.silent = silent
         self.src_path = src_path
         self.target_path = OSS_FUZZ / "projects" / target_name
-        # When HOST_ARTIFACT_DIR is set (host docker socket mode), use it directly
-        # Artifacts are separate from /work and /out, so --clean doesn't affect them
-        if HOST_ARTIFACT_DIR:
+        # In CONTAINER_MODE, use HOST_ARTIFACT_DIR (separate from /work and /out)
+        # In HOST_MODE, use OSS_FUZZ internal path
+        if CONTAINER_MODE:
             self.artifact_path = Path(HOST_ARTIFACT_DIR)
-            self.host_artifact_path = self.artifact_path  # Same path works on host and container
         else:
             self.artifact_path = OSS_FUZZ / "build/artifacts" / target_name
-            self.host_artifact_path = self.artifact_path
         self.workdir_path = OSS_FUZZ / "build/workdir" / target_name
         self.tarball_dir = self.artifact_path / "tarballs"
-        self.host_tarball_dir = self.host_artifact_path / "tarballs"
+        # With same-path mounts, artifact_path works for both local ops and Docker mounts
+        self.host_artifact_path = self.artifact_path
+        self.host_tarball_dir = self.tarball_dir
         os.makedirs(self.artifact_path, exist_ok=True)
         os.makedirs(self.tarball_dir, exist_ok=True)
         with open(self.target_path / "project.yaml") as f:
@@ -463,44 +479,40 @@ class Target:
             logging.warning(f"[{self.name}] {msg}")
 
     def fuzzer_dir(self):
-        """Returns the fuzzer output dir for local file operations."""
-        if HOST_OUT_DIR:
-            # When HOST_OUT_DIR is set, use it directly (same path on host and container)
+        """Returns the fuzzer output directory. Same path works for local ops and Docker mounts."""
+        if CONTAINER_MODE:
             return Path(HOST_OUT_DIR)
         return OSS_FUZZ_BUILD / self.name
 
     def host_fuzzer_dir(self):
-        """Returns the fuzzer dir for docker mounts. Uses HOST_OUT_DIR when set."""
-        if HOST_OUT_DIR:
-            return Path(HOST_OUT_DIR)
-        return OSS_FUZZ_BUILD / self.name
+        """Alias for fuzzer_dir (same-path mounts make them identical)."""
+        return self.fuzzer_dir()
 
     def work_dir(self):
-        """Returns the work dir for local file operations."""
-        if HOST_WORK_DIR:
-            # When HOST_WORK_DIR is set, use it directly (same path on host and container)
+        """Returns the work directory. Same path works for local ops and Docker mounts."""
+        if CONTAINER_MODE:
             return Path(HOST_WORK_DIR)
         return OSS_FUZZ_WORK / self.name
 
     def __coverage_dir(self):
-        # When HOST_OUT_DIR is set, use subdirectory of HOST_OUT_DIR
-        if HOST_OUT_DIR:
+        # In CONTAINER_MODE, use subdirectory of HOST_OUT_DIR
+        # In HOST_MODE, use sibling directory of fuzzer_dir
+        if CONTAINER_MODE:
             return Path(HOST_OUT_DIR) / "coverage"
         return Path(str(self.fuzzer_dir()) + "-coverage")
 
     def __lsp_dir(self):
-        if HOST_OUT_DIR:
+        if CONTAINER_MODE:
             return Path(HOST_OUT_DIR) / "lsp"
         return Path(str(self.fuzzer_dir()) + "-lsp")
 
     def __symcc_dir(self):
-        if HOST_OUT_DIR:
+        if CONTAINER_MODE:
             return Path(HOST_OUT_DIR) / "symcc"
-        suffix = "symcc"
-        return Path(str(self.fuzzer_dir()) + f"-{suffix}")
+        return Path(str(self.fuzzer_dir()) + "-symcc")
 
     def __symcc_bin_dir(self):
-        if HOST_OUT_DIR:
+        if CONTAINER_MODE:
             return Path(HOST_OUT_DIR) / "symcc-bin"
         return Path(str(self.fuzzer_dir()) + "-symcc-bin")
 
@@ -1045,7 +1057,9 @@ class Target:
         fail_symcc=False,
         coverage_harness=False,
     ) -> str:
-        # Always use --clean - artifacts are in separate HOST_ARTIFACT_DIR, not affected by clean
+        # --clean deletes /out and /work before build. Safe because:
+        # - In CONTAINER_MODE: artifacts are in separate HOST_ARTIFACT_DIR
+        # - In HOST_MODE: artifacts are in OSS_FUZZ/build/artifacts (not /out or /work)
         cmd = f"python3 {OSS_FUZZ_HELPER} build_fuzzers --clean"
         if is_test:
             cmd += " -e CRS_TEST=True"

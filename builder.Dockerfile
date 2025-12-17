@@ -20,7 +20,7 @@ RUN apt-get update -y && apt-get install -y \
     && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --break-system-packages coloredlogs pyyaml python-on-whales
+RUN pip3 install coloredlogs pyyaml python-on-whales
 
 # Copy full crs-multilang source
 COPY . /crs-multilang

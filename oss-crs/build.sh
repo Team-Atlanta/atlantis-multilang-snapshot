@@ -32,20 +32,23 @@ echo "Extracting source from $PARENT_IMAGE:$WORKDIR to repo.tar.gz..."
 docker run --rm -v "$HOST_TARBALL_DIR:/tarballs" "$PARENT_IMAGE" \
     sh -c "cd '$WORKDIR' && tar -cvzf /tarballs/repo.tar.gz ."
 
-# Step 4: Build CRS docker images on HOST (using HOST_CRS_DIR as build context)
-# These are needed for init_codeindexer and other build steps
-if [ -n "${HOST_CRS_DIR:-}" ]; then
-    echo "Building CRS docker images using host context: $HOST_CRS_DIR"
-    docker build -t crs-multilang -f "$HOST_CRS_DIR/Dockerfile" "$HOST_CRS_DIR"
-    docker build -t multilang-runner-joern -f "$HOST_CRS_DIR/joern/Dockerfile" "$HOST_CRS_DIR"
-    docker build -t multilang-lsp-base -f "$HOST_CRS_DIR/lsp/Dockerfile" "$HOST_CRS_DIR"
+# Step 4: Build CRS docker images using run.py build_crs
+# Docker client packages local context (/crs-multilang) and sends to host daemon
+# This works with host docker socket because context is sent as tarball, not path
+echo "Building CRS docker images via run.py build_crs..."
+python3 run.py build_crs
 
-    # Tag images with namespace for compatibility
-    docker tag crs-multilang crs-multilang/crs-multilang:latest
-    docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
-else
-    echo "WARNING: HOST_CRS_DIR not set, skipping CRS image builds"
-fi
+# Build multilang-runner-joern (not included in build_crs, but needed for runner)
+echo "Building multilang-runner-joern..."
+docker build -t multilang-runner-joern -f joern/Dockerfile .
+
+# Tag images with namespace for compatibility (run.py expects crs-multilang/crs-multilang:latest)
+echo "Tagging images with namespace..."
+docker tag crs-multilang crs-multilang/crs-multilang:latest
+docker tag multilang-lsp-base crs-multilang/multilang-lsp-base:latest
+docker tag multilang-c-archive crs-multilang/multilang-c-archive:latest
+docker tag multilang-jvm-archive crs-multilang/multilang-jvm-archive:latest
+docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
 
 # Step 5: Build fuzzers using run.py build
 echo "Building fuzzers via run.py build..."

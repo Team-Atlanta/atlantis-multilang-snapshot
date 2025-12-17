@@ -56,9 +56,21 @@ else
     export CRS_NETWORK_EXTERNAL="false"
 fi
 
-# Generate crs.config and set HOST_CRS_CONFIG for docker-compose
-HOST_CRS_CONFIG="${HOST_OUT_DIR}/crs.config"
-cat > /out/crs.config << EOF
+# Sanitize names for docker compose project/container naming (replace special chars with underscore)
+sanitize_name() {
+    echo "$1" | tr -c 'a-zA-Z0-9_-' '_' | sed 's/_*$//'
+}
+SAFE_TARGET=$(sanitize_name "${CRS_TARGET:-crs}")
+SAFE_HARNESS=$(sanitize_name "$HARNESS_NAME")
+
+# Export sanitized names for docker-compose container naming only
+# Keep original CRS_TARGET and HARNESS_NAME for CRS internal use
+export SAFE_TARGET
+export SAFE_HARNESS
+
+# Generate harness-specific crs.config to avoid conflicts with concurrent runs
+HOST_CRS_CONFIG="${HOST_OUT_DIR}/crs.config.${SAFE_HARNESS}"
+cat > "/out/crs.config.${SAFE_HARNESS}" << EOF
 {
     "target_harnesses": ["${HARNESS_NAME}"],
     "modules": ["uniafl"],
@@ -70,11 +82,11 @@ EOF
 
 export HOST_CRS_CONFIG
 echo "Generated crs.config at $HOST_CRS_CONFIG:"
-cat /out/crs.config
+cat "/out/crs.config.${SAFE_HARNESS}"
 
 # Start all services with docker compose
 # Use unique project name to avoid conflicts when running multiple instances
-COMPOSE_PROJECT="${CRS_TARGET:-crs}_${HARNESS_NAME}"
+COMPOSE_PROJECT="${SAFE_TARGET}_${SAFE_HARNESS}"
 export COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT"
 
 echo "Starting services with docker compose (project: $COMPOSE_PROJECT)..."

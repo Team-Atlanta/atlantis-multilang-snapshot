@@ -21,11 +21,23 @@ while ! docker info > /dev/null 2>&1; do
 done
 echo "Docker daemon ready"
 
-# Load images from /out/images/ (docker load auto-detects gzip)
+# Load images from /out/images/ (prefer .tar over .tar.gz for speed)
+load_runner_image() {
+    local base_name="$1"
+    if [ -f "/out/images/${base_name}.tar" ]; then
+        docker load -i "/out/images/${base_name}.tar"
+    elif [ -f "/out/images/${base_name}.tar.gz" ]; then
+        docker load -i "/out/images/${base_name}.tar.gz"
+    else
+        echo "ERROR: Image not found: $base_name (.tar or .tar.gz)"
+        exit 1
+    fi
+}
+
 echo "Loading images from /out/images/..."
-docker load -i /out/images/crs-multilang.tar.gz
-docker load -i /out/images/joern.tar.gz
-docker load -i /out/images/redis.tar.gz
+load_runner_image "crs-multilang"
+load_runner_image "joern"
+load_runner_image "redis"
 
 # Set environment variables for docker-compose
 export HARNESS_NAME="$HARNESS_NAME"

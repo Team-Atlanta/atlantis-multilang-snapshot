@@ -9,12 +9,21 @@ echo "Verifying cache at $CRS_CACHE_DIR..."
 
 missing=0
 for img in "${REQUIRED_IMAGES[@]}"; do
-    if [ ! -f "$CRS_CACHE_DIR/$img" ]; then
-        echo "ERROR: Missing $img"
-        missing=1
+    base_name="${img%.tar.gz}"
+    base_name="${base_name%.tar}"
+
+    # Check for either .tar or .tar.gz
+    if [ -f "$CRS_CACHE_DIR/${base_name}.tar" ]; then
+        img_path="$CRS_CACHE_DIR/${base_name}.tar"
+        size=$(du -h "$img_path" | cut -f1)
+        echo "  OK: ${base_name}.tar ($size)"
+    elif [ -f "$CRS_CACHE_DIR/${base_name}.tar.gz" ]; then
+        img_path="$CRS_CACHE_DIR/${base_name}.tar.gz"
+        size=$(du -h "$img_path" | cut -f1)
+        echo "  OK: ${base_name}.tar.gz ($size)"
     else
-        size=$(du -h "$CRS_CACHE_DIR/$img" | cut -f1)
-        echo "  OK: $img ($size)"
+        echo "ERROR: Missing $base_name (.tar or .tar.gz)"
+        missing=1
     fi
 done
 

@@ -21,14 +21,28 @@ for img in "${REQUIRED_IMAGES[@]}"; do
 done
 
 # Load images in parallel with controlled concurrency
+# Prefer .tar over .tar.gz for faster loading
 load_image() {
     local img="$1"
-    local img_path="$CRS_CACHE_DIR/$img"
-    echo "[START] Loading $img..."
-    if docker load -i "$img_path" > /dev/null 2>&1; then
-        echo "[DONE]  Loaded $img"
+    local base_name="${img%.tar.gz}"
+    base_name="${base_name%.tar}"
+
+    # Check for .tar first (faster), then .tar.gz
+    local img_path=""
+    if [ -f "$CRS_CACHE_DIR/${base_name}.tar" ]; then
+        img_path="$CRS_CACHE_DIR/${base_name}.tar"
+    elif [ -f "$CRS_CACHE_DIR/${base_name}.tar.gz" ]; then
+        img_path="$CRS_CACHE_DIR/${base_name}.tar.gz"
     else
-        echo "[ERROR] Failed to load $img"
+        echo "[ERROR] No cache file found for $base_name (.tar or .tar.gz)"
+        return 1
+    fi
+
+    echo "[START] Loading $(basename "$img_path")..."
+    if docker load -i "$img_path" > /dev/null 2>&1; then
+        echo "[DONE]  Loaded $(basename "$img_path")"
+    else
+        echo "[ERROR] Failed to load $(basename "$img_path")"
         return 1
     fi
 }

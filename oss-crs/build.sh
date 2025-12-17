@@ -63,11 +63,25 @@ cd /tmp/empty_project && tar -cvzf "$TARBALL_DIR/project.tar.gz" . && cd /crs-mu
 touch "$TARBALL_DIR/DONE"
 
 # Step 6: Prepare images for runner (all from cache)
+# Helper: copy image preferring .tar over .tar.gz
+copy_cached_image() {
+    local base_name="$1"
+    local dest_name="$2"
+    if [ -f "$CRS_CACHE_DIR/${base_name}.tar" ]; then
+        cp "$CRS_CACHE_DIR/${base_name}.tar" "/out/images/${dest_name}.tar"
+    elif [ -f "$CRS_CACHE_DIR/${base_name}.tar.gz" ]; then
+        cp "$CRS_CACHE_DIR/${base_name}.tar.gz" "/out/images/${dest_name}.tar.gz"
+    else
+        echo "ERROR: Cache file not found for $base_name"
+        exit 1
+    fi
+}
+
 echo "Preparing images for runner..."
 mkdir -p /out/images
-cp "$CRS_CACHE_DIR/crs-multilang.tar.gz" /out/images/crs-multilang.tar.gz
-cp "$CRS_CACHE_DIR/multilang-runner-joern.tar.gz" /out/images/joern.tar.gz
-cp "$CRS_CACHE_DIR/redis.tar.gz" /out/images/redis.tar.gz
+copy_cached_image "crs-multilang" "crs-multilang"
+copy_cached_image "multilang-runner-joern" "joern"
+copy_cached_image "redis" "redis"
 
 echo "=== Build complete ==="
 echo "Output in /out/:"

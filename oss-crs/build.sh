@@ -4,6 +4,11 @@ set -eu
 echo "=== CRS-Multilang Build Phase ==="
 echo "Project name: $PROJECT_NAME"
 
+# Capture source directory (parent's WORKDIR where oss-crs copied source)
+# This must be done BEFORE cd'ing to /crs-multilang
+SOURCE_DIR=$(pwd)
+echo "Source directory: $SOURCE_DIR"
+
 cd /crs-multilang
 
 # Step 1: Verify Docker socket is available (needed for build_crs)
@@ -13,9 +18,9 @@ if ! docker info > /dev/null 2>&1; then
 fi
 echo "Docker daemon accessible via host socket"
 
-# Step 2: Create repo.tar.gz from source (source is at /src from parent_image)
-echo "Creating repo.tar.gz from /src..."
-tar -czf /out/repo.tar.gz -C /src .
+# Step 2: Create repo.tar.gz from source
+echo "Creating repo.tar.gz from $SOURCE_DIR..."
+tar -czf /out/repo.tar.gz -C "$SOURCE_DIR" .
 
 # Step 3: Build CRS docker images using run.py build_crs
 echo "Building CRS docker images via run.py build_crs..."

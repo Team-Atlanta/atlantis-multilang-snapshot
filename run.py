@@ -836,7 +836,7 @@ class Target:
         else:
             fail_symcc = False
         suffix = "symcc"
-        out_dir = Path(str(self.fuzzer_dir()) + f"-{suffix}")
+        out_dir = self.__symcc_dir()
         if not self.__need_build(out_dir, invalidate=fail_symcc):
             self.log("Use already compiled symcced CP")
             return False
@@ -1097,10 +1097,22 @@ class Target:
         elif symcc_harness:
             build_type = "symcc"
         self.log(f"Build for {build_type}")
-        with MultilangDockerBuild(self, out_dir, build_type) as f:
-            return self.__run_cmd(
-                cmd, error_ok=symcc_harness or coverage_harness, timeout=timeout
-            )
+
+        # Set HOST_OUT_SUBDIR for non-main builds so helper.py writes to subdirectory
+        # This avoids polluting main output with coverage/symcc/lsp build artifacts
+        if HOST_OUT_DIR and build_type != "multilang":
+            os.environ["HOST_OUT_SUBDIR"] = build_type
+            self.log(f"Set HOST_OUT_SUBDIR={build_type}")
+
+        try:
+            with MultilangDockerBuild(self, out_dir, build_type) as f:
+                return self.__run_cmd(
+                    cmd, error_ok=symcc_harness or coverage_harness, timeout=timeout
+                )
+        finally:
+            # Clear HOST_OUT_SUBDIR after build
+            if "HOST_OUT_SUBDIR" in os.environ:
+                del os.environ["HOST_OUT_SUBDIR"]
 
     def __run_build_verbose(
         self,
@@ -1123,22 +1135,32 @@ class Target:
             build_type = "coverage"
         elif symcc_harness:
             build_type = "symcc"
-        with MultilangDockerBuild(self, out_dir, build_type) as f:
-            try:
-                res = subprocess.run(
-                    cmd,
-                    shell=True,
-                    check=False,
-                    # stdout=subprocess.PIPE,
-                    # stderr=subprocess.PIPE,
-                    timeout=600,
-                )
-            except subprocess.TimeoutExpired:
-                logger.error("Timeout expired")
-                res = subprocess.CompletedProcess(
-                    cmd, -1, stdout=b"", stderr=b"Timeout expired"
-                )
-        return res
+
+        # Set HOST_OUT_SUBDIR for non-main builds so helper.py writes to subdirectory
+        if HOST_OUT_DIR and build_type != "multilang":
+            os.environ["HOST_OUT_SUBDIR"] = build_type
+
+        try:
+            with MultilangDockerBuild(self, out_dir, build_type) as f:
+                try:
+                    res = subprocess.run(
+                        cmd,
+                        shell=True,
+                        check=False,
+                        # stdout=subprocess.PIPE,
+                        # stderr=subprocess.PIPE,
+                        timeout=600,
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.error("Timeout expired")
+                    res = subprocess.CompletedProcess(
+                        cmd, -1, stdout=b"", stderr=b"Timeout expired"
+                    )
+            return res
+        finally:
+            # Clear HOST_OUT_SUBDIR after build
+            if "HOST_OUT_SUBDIR" in os.environ:
+                del os.environ["HOST_OUT_SUBDIR"]
 
     def __to_symcc_bin_dir(self, out_dir, suffix):
         symcc_bin_dir = self.__symcc_bin_dir()
@@ -1296,8 +1318,12 @@ class CP_Builder:
     def log(self, msg):
         logging.info(f"[CP Builder] {msg}")
 
-    def rsync(self, src, dst):
-        cmd = ["rsync", "-a", src, dst]
+    def rsync(self, src, dst, exclude=None):
+        cmd = ["rsync", "-a"]
+        if exclude:
+            for pattern in exclude:
+                cmd.extend(["--exclude", pattern])
+        cmd.extend([src, dst])
         while True:
             if run(cmd, error_ok=True):
                 return
@@ -1334,7 +1360,10 @@ class CP_Builder:
                         run(["cp", filter_json, target.tarball_dir / filter_json.name])
                         self.__rewrite_conf(conf_dst, filter_json)
             """
-        self.rsync(str(target.tarball_dir) + "/", out_dir)
+        # When HOST_ARTIFACT_DIR is set, tarballs are already in artifacts/tarballs
+        # Don't duplicate them in out_dir
+        exclude_patterns = ["*.tar.gz"] if HOST_ARTIFACT_DIR else None
+        self.rsync(str(target.tarball_dir) + "/", out_dir, exclude=exclude_patterns)
         self.touch_done(f"{out_dir / 'DONE'}")
         # LSP and coverage already built by target.build(), just start LSP and finalize
         self.__start_lsp(target)
@@ -1350,7 +1379,9 @@ class CP_Builder:
 
     def __finalize_tarball(self, target, out_dir, name):
         tarball_path = f"{target.tarball_dir}/{name}.tar.gz"
-        if Path(tarball_path).exists():
+        # Skip copying tarball to out_dir when HOST_ARTIFACT_DIR is set
+        # Tarballs are already in artifacts/tarballs and mounted to runner
+        if Path(tarball_path).exists() and not HOST_ARTIFACT_DIR:
             self.rsync(tarball_path, out_dir)
         self.touch_done(f"{out_dir / name}.done")
 

@@ -18,17 +18,26 @@ if ! docker info > /dev/null 2>&1; then
 fi
 echo "Docker daemon accessible via host socket"
 
-# Step 2: Create repo.tar.gz from source
-echo "Creating repo.tar.gz from $SOURCE_DIR..."
-mkdir -p /out/tarballs
-tar -czf /out/tarballs/repo.tar.gz -C "$SOURCE_DIR" .
-
-# Also copy to artifact tarball location for create_conf (which mounts from there)
+# Step 2: Determine tarball directory
+# When HOST_ARTIFACT_DIR is set, use it for tarballs (no duplication in /out)
 if [ -n "${HOST_ARTIFACT_DIR:-}" ]; then
-    ARTIFACT_TARBALL_DIR="$HOST_ARTIFACT_DIR/tarballs"
-    echo "Copying repo.tar.gz to artifact location: $ARTIFACT_TARBALL_DIR"
-    mkdir -p "$ARTIFACT_TARBALL_DIR"
-    cp /out/tarballs/repo.tar.gz "$ARTIFACT_TARBALL_DIR/"
+    TARBALL_DIR="$HOST_ARTIFACT_DIR/tarballs"
+    echo "Using artifact tarball directory: $TARBALL_DIR"
+else
+    TARBALL_DIR="/out/tarballs"
+    echo "Using default tarball directory: $TARBALL_DIR"
+fi
+mkdir -p "$TARBALL_DIR"
+
+# Step 2.5: Create repo.tar.gz from source (required by run.py build)
+# CP_Builder expects repo.tar.gz to exist before building
+echo "Creating repo.tar.gz from source directory..."
+REPO_TARBALL="$TARBALL_DIR/repo.tar.gz"
+if [ ! -f "$REPO_TARBALL" ]; then
+    tar --use-compress-program=pigz -cf "$REPO_TARBALL" -C "$SOURCE_DIR" .
+    echo "Created $REPO_TARBALL"
+else
+    echo "repo.tar.gz already exists, skipping creation"
 fi
 
 # Step 3: Build CRS docker images using run.py build_crs
@@ -51,7 +60,7 @@ docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
 echo "Building fuzzers via run.py build..."
 python3 run.py build \
     --target "$PROJECT_NAME" \
-    --tar-dir /out/tarballs \
+    --tar-dir "$TARBALL_DIR" \
     --out-dir /out \
     --focus "" \
     --registry local \

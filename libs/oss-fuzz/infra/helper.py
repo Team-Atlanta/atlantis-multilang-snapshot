@@ -41,6 +41,8 @@ BUILD_DIR = os.path.join(OSS_FUZZ_DIR, 'build')
 # use them for docker volume mounts instead of container paths
 _HOST_WORK_DIR = os.environ.get("HOST_WORK_DIR")
 _HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
+# HOST_OUT_SUBDIR: subdirectory for non-main builds (coverage, symcc, lsp)
+_HOST_OUT_SUBDIR = os.environ.get("HOST_OUT_SUBDIR", "")
 
 BASE_IMAGE_TAG = ':v1.3.0' # no tag for latest
 
@@ -1048,6 +1050,10 @@ def run_clusterfuzzlite(args):
 
 def build_fuzzers(args):
   """Builds fuzzers."""
+  # In host docker mode, use HOST_OUT_SUBDIR for non-main builds (coverage, symcc, lsp)
+  # This ensures each build type writes to its own subdirectory
+  host_out_subdir = os.environ.get("HOST_OUT_SUBDIR", "")
+
   if args.engine == 'centipede' and args.sanitizer != 'none':
     # Centipede always requires separate binaries for sanitizers:
     # An unsanitized binary, which Centipede requires for fuzzing.
@@ -1056,6 +1062,9 @@ def build_fuzzers(args):
         ('none', ''),
         (args.sanitizer, f'__centipede_{args.sanitizer}'),
     )
+  elif host_out_subdir:
+    # Use subdirectory specified by run.py for non-main builds
+    sanitized_binary_directories = ((args.sanitizer, host_out_subdir),)
   else:
     # Generally, a fuzzer only needs one sanitized binary in the default dir.
     sanitized_binary_directories = ((args.sanitizer, ''),)

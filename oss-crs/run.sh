@@ -33,7 +33,14 @@ export TARBALL_DIR="/out/tarballs"
 export CPUSET_CPUS="${CPUSET_CPUS:-0-7}"
 export MEMORY_LIMIT="${MEMORY_LIMIT:-16G}"
 export LITELLM_URL="${LITELLM_URL:-}"
-export LITELLM_KEY="${LITELLM_KEY:-}"
+# Read LiteLLM key from /keys/api_key (oss-crs convention) or fall back to env var
+if [ -f /keys/api_key ]; then
+    export LITELLM_KEY="$(cat /keys/api_key)"
+else
+    export LITELLM_KEY="${LITELLM_KEY:-}"
+fi
+export CRS_TARGET="${CRS_TARGET:-}"
+export CRS_NAME="${CRS_NAME:-crs-multilang}"
 
 # Generate crs.config for given_fuzzer mode
 cat > /tmp/crs.config << EOF

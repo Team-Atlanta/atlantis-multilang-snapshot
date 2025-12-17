@@ -26,8 +26,10 @@ services:
       - LITELLM_URL=${LITELLM_URL:-}
       - LITELLM_KEY=${LITELLM_KEY:-}
       - CPUSET_CPUS=${CPUSET_CPUS:-0-7}
-      - FUZZING_ENGINE=libfuzzer
-      - SANITIZER=address
+      - FUZZING_ENGINE=${FUZZING_ENGINE:-libfuzzer}
+      - SANITIZER=${SANITIZER:-address}
+      - CRS_TARGET=${CRS_TARGET:-}
+      - CRS_NAME=${CRS_NAME:-crs-multilang}
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909

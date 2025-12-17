@@ -28,6 +28,9 @@ OSS_FUZZ = CUR_DIR / "libs/oss-fuzz"
 OSS_FUZZ_BUILD = OSS_FUZZ / "build/out/"
 OSS_FUZZ_WORK = OSS_FUZZ / "build/work/"
 OSS_FUZZ_HELPER = str(OSS_FUZZ / "infra/helper.py")
+# Host docker socket mode: when HOST_WORK_DIR/HOST_OUT_DIR are set, use them for docker volume mounts
+HOST_WORK_DIR = os.environ.get("HOST_WORK_DIR")
+HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
 SUPPORTED_LANGS = ["c", "c++", "cpp", "jvm"]
 CONCOLIC_COMMON_ADDITIONAL_ARGS = (
     " --engine none -e COMPILE_SYMCC=1 -e CLANG_CRASH_DIAGNOSTICS_DIR=/out"
@@ -231,26 +234,34 @@ class MultilangDockerBuild:
 
     def __docker_mv(self, src, dst):
         assert src.parent == dst.parent
-        parent = src.parent
-        docker_cmd = [
-            "docker",
-            "run",
-            "--privileged",
-            "--shm-size=2g",
-            "--platform",
-            "linux/amd64",
-        ]
-        docker_cmd += ["-v", f"{parent}:/out"]
-        docker_cmd += ["-t", "crs-multilang"]
+        # When using host docker socket, run mv directly
+        if HOST_WORK_DIR:
+            run(["rm", "-rf", str(dst)])
+            run(["mv", str(src), str(dst)])
+        else:
+            parent = src.parent
+            docker_cmd = [
+                "docker",
+                "run",
+                "--privileged",
+                "--shm-size=2g",
+                "--platform",
+                "linux/amd64",
+            ]
+            docker_cmd += ["-v", f"{parent}:/out"]
+            docker_cmd += ["-t", "crs-multilang"]
 
-        for cmd in [
-            ["rm", "-rf", f"/out/{dst.name}"],
-            ["mv", f"/out/{src.name}", f"/out/{dst.name}"],
-        ]:
-            run(docker_cmd + cmd)
+            for cmd in [
+                ["rm", "-rf", f"/out/{dst.name}"],
+                ["mv", f"/out/{src.name}", f"/out/{dst.name}"],
+            ]:
+                run(docker_cmd + cmd)
 
     def __backup_prev_out(self):
         if self.out_dir == None:
+            return
+        # Skip backup when using host docker socket mode (outputs go to mount point)
+        if HOST_OUT_DIR:
             return
         out = Path(self.out_dir)
         prev_out = OSS_FUZZ_BUILD / self.target.name
@@ -264,6 +275,9 @@ class MultilangDockerBuild:
 
     def __restore_out(self):
         if self.backup == None:
+            return
+        # Skip restore when using host docker socket mode
+        if HOST_OUT_DIR:
             return
         prev_out = OSS_FUZZ_BUILD / self.target.name
         # if SymCC or coverage build failed, prev_out will be nonexistent
@@ -403,9 +417,16 @@ class Target:
         self.silent = silent
         self.src_path = src_path
         self.target_path = OSS_FUZZ / "projects" / target_name
-        self.artifact_path = OSS_FUZZ / "build/artifacts" / target_name
+        # When HOST_WORK_DIR is set (host docker socket mode), use /work as base
+        if HOST_WORK_DIR:
+            self.artifact_path = Path("/work") / "artifacts" / target_name
+            self.host_artifact_path = Path(HOST_WORK_DIR) / "artifacts" / target_name
+        else:
+            self.artifact_path = OSS_FUZZ / "build/artifacts" / target_name
+            self.host_artifact_path = self.artifact_path
         self.workdir_path = OSS_FUZZ / "build/workdir" / target_name
         self.tarball_dir = self.artifact_path / "tarballs"
+        self.host_tarball_dir = self.host_artifact_path / "tarballs"
         os.makedirs(self.artifact_path, exist_ok=True)
         os.makedirs(self.tarball_dir, exist_ok=True)
         with open(self.target_path / "project.yaml") as f:
@@ -440,22 +461,45 @@ class Target:
             logging.warning(f"[{self.name}] {msg}")
 
     def fuzzer_dir(self):
+        """Returns the fuzzer output dir for local file operations."""
+        if HOST_OUT_DIR:
+            # When HOST_OUT_DIR is set, /out is the mount point inside the container
+            return Path("/out")
+        return OSS_FUZZ_BUILD / self.name
+
+    def host_fuzzer_dir(self):
+        """Returns the fuzzer dir for docker mounts. Uses HOST_OUT_DIR when set."""
+        if HOST_OUT_DIR:
+            return Path(HOST_OUT_DIR)
         return OSS_FUZZ_BUILD / self.name
 
     def work_dir(self):
+        """Returns the work dir for local file operations."""
+        if HOST_WORK_DIR:
+            # When HOST_WORK_DIR is set, /work is the mount point inside the container
+            return Path("/work")
         return OSS_FUZZ_WORK / self.name
 
     def __coverage_dir(self):
+        # When HOST_OUT_DIR is set, use subdirectory of /out instead of sibling
+        if HOST_OUT_DIR:
+            return Path("/out/coverage")
         return Path(str(self.fuzzer_dir()) + "-coverage")
 
     def __lsp_dir(self):
+        if HOST_OUT_DIR:
+            return Path("/out/lsp")
         return Path(str(self.fuzzer_dir()) + "-lsp")
 
     def __symcc_dir(self):
+        if HOST_OUT_DIR:
+            return Path("/out/symcc")
         suffix = "symcc"
         return Path(str(self.fuzzer_dir()) + f"-{suffix}")
 
     def __symcc_bin_dir(self):
+        if HOST_OUT_DIR:
+            return Path("/out/symcc-bin")
         return Path(str(self.fuzzer_dir()) + "-symcc-bin")
 
     def __run_cmd(
@@ -553,6 +597,8 @@ class Target:
     def __need_build(self, out_dir=None, invalidate=False):
         if out_dir == None:
             out_dir = self.fuzzer_dir()
+        # Always ensure out_dir exists before checking build info
+        os.makedirs(out_dir, exist_ok=True)
         if self.src_path != None:
             return not (out_dir / ".build_info").exists()
         if invalidate and out_dir.exists():
@@ -561,7 +607,6 @@ class Target:
                 if f.is_file():
                     f.unlink()
             return True
-        os.makedirs(out_dir, exist_ok=True)
         fname = out_dir / ".build_info"
         if not fname.exists():
             return True
@@ -630,52 +675,75 @@ class Target:
         if not src.exists():
             self.log(f"Skip tar {dst} because {src} doesn't exist")
             return
-        tar_cmd = [
-            "tar",
-            "--use-compress-program=pigz",
-            "-cv",
-            "-f",
-            f"/tarballs/{dst}",
-            "-C",
-            "/src/",
-            ".",
-        ]
-        docker_cmd = [
-            "docker",
-            "run",
-            "--privileged",
-            "--shm-size=2g",
-            "--platform",
-            "linux/amd64",
-            "-v",
-            f"{self.tarball_dir}:/tarballs",
-            "-v",
-            f"{src}:/src",
-            "-t",
-            "crs-multilang",
-        ]
-        self.__run_cmd(docker_cmd + tar_cmd)
+        # When using host docker socket, run tar directly (builder has pigz installed)
+        if HOST_WORK_DIR:
+            tar_cmd = [
+                "tar",
+                "--use-compress-program=pigz",
+                "-cv",
+                "-f",
+                str(self.tarball_dir / dst),
+                "-C",
+                str(src),
+                ".",
+            ]
+            self.__run_cmd(tar_cmd)
+        else:
+            tar_cmd = [
+                "tar",
+                "--use-compress-program=pigz",
+                "-cv",
+                "-f",
+                f"/tarballs/{dst}",
+                "-C",
+                "/src/",
+                ".",
+            ]
+            docker_cmd = [
+                "docker",
+                "run",
+                "--privileged",
+                "--shm-size=2g",
+                "--platform",
+                "linux/amd64",
+                "-v",
+                f"{self.tarball_dir}:/tarballs",
+                "-v",
+                f"{src}:/src",
+                "-t",
+                "crs-multilang",
+            ]
+            self.__run_cmd(docker_cmd + tar_cmd)
 
     def __docker_rsync(self, src, dst, excludes=[]):
-        cmd = ["rsync", "-a"]
-        for ex in excludes:
-            cmd += [f"--exclude={ex}"]
-        cmd += ["/src/", "/dst/"]
-        docker_cmd = [
-            "docker",
-            "run",
-            "--privileged",
-            "--shm-size=2g",
-            "--platform",
-            "linux/amd64",
-            "-v",
-            f"{src}:/src",
-            "-v",
-            f"{dst}:/dst",
-            "-t",
-            "crs-multilang",
-        ]
-        self.__run_cmd(docker_cmd + cmd)
+        # When using host docker socket, run rsync directly (builder has rsync installed)
+        if HOST_WORK_DIR:
+            cmd = ["rsync", "-a"]
+            for ex in excludes:
+                cmd += [f"--exclude={ex}"]
+            os.makedirs(dst, exist_ok=True)
+            cmd += [str(src) + "/", str(dst) + "/"]
+            self.__run_cmd(cmd)
+        else:
+            cmd = ["rsync", "-a"]
+            for ex in excludes:
+                cmd += [f"--exclude={ex}"]
+            cmd += ["/src/", "/dst/"]
+            docker_cmd = [
+                "docker",
+                "run",
+                "--privileged",
+                "--shm-size=2g",
+                "--platform",
+                "linux/amd64",
+                "-v",
+                f"{src}:/src",
+                "-v",
+                f"{dst}:/dst",
+                "-t",
+                "crs-multilang",
+            ]
+            self.__run_cmd(docker_cmd + cmd)
 
     def __build_basic(self, src, args):
         if not self.__need_build(invalidate=args.get("fail_symcc", False)):
@@ -872,9 +940,9 @@ class Target:
         sanitizer = args.get("sanitizer", "address")
         cmd += ["-e", f"SANITIZER={sanitizer}"]
         cmd += ["-e", "RUN_FUZZER_MODE=interactive", "-e", "HELPER=True"]
-        cmd += ["-v", f"{self.tarball_dir}:/tarballs"]
+        cmd += ["-v", f"{self.host_tarball_dir}:/tarballs"]
         if create_conf != None:
-            cmd += ["-v", f"{self.fuzzer_dir()}:/out"]
+            cmd += ["-v", f"{self.host_fuzzer_dir()}:/out"]
         config = args.get("config", "")
         if config != "":
             cmd += ["-v", f"{config}:/crs.config"]
@@ -908,7 +976,7 @@ class Target:
         eval_sec = args.get("seconds", 0)
         if eval_sec != 0:
             cmd += ["-e", f"EVAL_SEC={eval_sec}"]
-            cmd += ["-v", f"{self.artifact_path}:/artifact"]
+            cmd += ["-v", f"{self.host_artifact_path}:/artifact"]
         if args.get("copy_workdir"):
             cmd += ["-e", "SAVE_WORKDIR_RESULT=True"]
         if args.get("llm_test"):

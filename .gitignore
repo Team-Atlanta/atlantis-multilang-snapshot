@@ -12,3 +12,6 @@ target/
 /*.list
 .cursorignore
 .vscode
+
+# Pre-built Docker image cache
+oss-crs/cache/

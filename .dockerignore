@@ -32,3 +32,6 @@ blob-gen/multilang-llm-agent/ci.config
 # blob-gen/multilang-llm-agent/.pytest_cache
 # blob-gen/multilang-llm-agent/.git
 # blob-gen/multilang-llm-agent/.gitignore
+
+# Pre-built Docker image cache (mounted at runtime via volumes)
+oss-crs/cache

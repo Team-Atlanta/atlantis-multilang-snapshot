@@ -59,35 +59,35 @@ python3 run.py build \
     --focus "" \
     --registry local \
     --image-version latest \
-    --skip-symcc-verification
+    --skip-symcc-verification \
+    --start-other-services
 
 # Step 6: Create tarballs for CRS runner
 echo "Creating tarballs for CRS runner..."
 cd /out && tar -cvzf "$TARBALL_DIR/fuzzers.tar.gz" . && cd /crs-multilang
 
-mkdir -p /tmp/empty_project
-touch /tmp/empty_project/.placeholder
-cd /tmp/empty_project && tar -cvzf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
+# Create project.tar.gz from the actual project directory (contains project.yaml, .aixcc/, etc.)
+PROJECT_DIR="/crs-multilang/libs/oss-fuzz/projects/${PROJECT_NAME}"
+if [ -d "$PROJECT_DIR" ]; then
+    echo "Creating project.tar.gz from $PROJECT_DIR..."
+    cd "$PROJECT_DIR" && tar -cvzf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
+else
+    echo "WARNING: Project directory not found at $PROJECT_DIR, creating empty project.tar.gz"
+    mkdir -p /tmp/empty_project
+    touch /tmp/empty_project/.placeholder
+    cd /tmp/empty_project && tar -cvzf "$TARBALL_DIR/project.tar.gz" . && cd /crs-multilang
+fi
 
-# Step 7: Save runtime images for DinD runner
-echo "Saving runtime images to /out/images/..."
-IMAGES_DIR=/out/images
-mkdir -p "$IMAGES_DIR"
-
-# Save images needed by runner's docker-compose
-docker save crs-multilang/crs-multilang:latest -o "$IMAGES_DIR/crs-multilang.tar"
-docker save crs-multilang/multilang-runner-joern:latest -o "$IMAGES_DIR/multilang-runner-joern.tar"
-
-# Save redis (pull if not present)
+# Pull redis if not present (runner will use it directly from host daemon)
 if ! docker image inspect redis:latest > /dev/null 2>&1; then
+    echo "Pulling redis:latest..."
     docker pull redis:latest
 fi
-docker save redis:latest -o "$IMAGES_DIR/redis.tar"
 
 touch "$TARBALL_DIR/DONE"
 
 echo "=== Build complete ==="
 echo "Output in /out/:"
 ls -la /out/
-echo "Images in /out/images/:"
-ls -la /out/images/
+echo "Tarballs in $TARBALL_DIR:"
+ls -la "$TARBALL_DIR"

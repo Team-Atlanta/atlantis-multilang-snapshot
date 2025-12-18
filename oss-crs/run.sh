@@ -42,6 +42,7 @@ else
 fi
 export CRS_TARGET="${CRS_TARGET:-}"
 export CRS_NAME="${CRS_NAME:-crs-multilang}"
+export CRS_SKIP_SAVE="${CRS_SKIP_SAVE:-}"
 
 # HOST_OUT_DIR is used for docker volume mounts when using host docker socket
 # If not set, defaults to /out (for DinD mode compatibility)

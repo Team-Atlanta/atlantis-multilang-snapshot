@@ -36,6 +36,21 @@ services:
     # Exit after indexing is complete (not a long-running service)
     restart: "no"
 
+  lsp:
+    image: ${LSP_RUNNER:-crs-multilang/multilang-lsp-base:latest}
+    container_name: lsp_${SAFE_TARGET}_${SAFE_HARNESS}
+    restart: unless-stopped
+    environment:
+      - CRS_TARGET=${CRS_TARGET:-}
+    volumes:
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+    depends_on:
+      - redis
+    networks:
+      - crs-internal
+    ports:
+      - "3303"  # Expose internally, mapped dynamically
+
   crs:
     image: crs-multilang/crs-multilang:latest
     container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
@@ -59,6 +74,7 @@ services:
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909
+      - LSP_URL=http://lsp:3303
     volumes:
       - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
       - ${HOST_ARTIFACT_DIR:-/out}:/artifacts
@@ -68,6 +84,7 @@ services:
       - redis
       - joern
       - codeindexer
+      - lsp
     networks:
       # Internal network for redis/joern communication (project-scoped, isolated)
       - crs-internal

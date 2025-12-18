@@ -56,6 +56,11 @@ docker tag multilang-c-archive crs-multilang/multilang-c-archive:latest
 docker tag multilang-jvm-archive crs-multilang/multilang-jvm-archive:latest
 docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
 
+# Save project-specific info for runner phase
+# LSP runner image name follows pattern: multilang-lsp-{project_name}
+SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_')
+echo "$SAFE_PROJECT" > "$TARBALL_DIR/project_safe_name"
+
 # Step 4: Build fuzzers using run.py build
 echo "Building fuzzers via run.py build..."
 python3 run.py build \
@@ -67,6 +72,15 @@ python3 run.py build \
     --image-version latest \
     --skip-symcc-verification \
     --start-other-services
+
+# Tag project-specific LSP runner image with namespace
+LSP_RUNNER_IMAGE="multilang-lsp-$SAFE_PROJECT"
+if docker image inspect "$LSP_RUNNER_IMAGE" > /dev/null 2>&1; then
+    echo "Tagging LSP runner image: $LSP_RUNNER_IMAGE"
+    docker tag "$LSP_RUNNER_IMAGE" "crs-multilang/$LSP_RUNNER_IMAGE:latest"
+else
+    echo "WARNING: LSP runner image not found: $LSP_RUNNER_IMAGE"
+fi
 
 # Pull redis if not present (runner will use it directly from host daemon)
 if ! docker image inspect redis:latest > /dev/null 2>&1; then

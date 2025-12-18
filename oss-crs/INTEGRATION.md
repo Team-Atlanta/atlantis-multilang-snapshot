@@ -330,6 +330,37 @@ codeindexer:
 **Files Modified:**
 - `oss-crs/docker-compose.yml` - Added `codeindexer` service, added dependency from `crs`
 
+### 8. LSP Service Integration
+
+**Problem:** LSP (Language Server Protocol) server was not running in the oss-crs docker-compose setup. LSP provides code navigation and analysis features used by LLM agents.
+
+**Solution:** Added `lsp` as a separate service in docker-compose.yml:
+1. Build phase tags project-specific LSP runner image (`multilang-lsp-{project}`)
+2. Runner phase reads project name and sets LSP_RUNNER environment variable
+3. CRS container connects to LSP via internal network
+
+```yaml
+lsp:
+  image: ${LSP_RUNNER:-crs-multilang/multilang-lsp-base:latest}
+  container_name: lsp_${SAFE_TARGET}_${SAFE_HARNESS}
+  restart: unless-stopped
+  environment:
+    - CRS_TARGET=${CRS_TARGET:-}
+  volumes:
+    - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+  depends_on:
+    - redis
+  networks:
+    - crs-internal
+  ports:
+    - "3303"
+```
+
+**Files Modified:**
+- `oss-crs/build.sh` - Save project name, tag LSP runner image
+- `oss-crs/run.sh` - Read project name and set LSP_RUNNER env var
+- `oss-crs/docker-compose.yml` - Added `lsp` service, LSP_URL env var, dependency from `crs`
+
 ---
 
 ## Bugs Fixed

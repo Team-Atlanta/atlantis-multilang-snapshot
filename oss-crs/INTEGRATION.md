@@ -203,6 +203,60 @@ HOST_OUT_SUBDIR=symcc → outputs to HOST_OUT_DIR/symcc/
 - `bin/run_crs` - Added result saving logic
 - `oss-crs/run.sh` - Pass through `CRS_SKIP_SAVE`
 
+### 5. CPU Count vs Cpuset Mismatch
+
+**Problem:** When using Docker's `cpuset` to limit container to specific CPUs (e.g., `cpuset: 0-7`), CRS-multilang still spawned fuzzers based on host's total CPU count.
+
+```
+Host: 128 CPUs
+Container cpuset: 0-7 (8 CPUs)
+Fuzzers spawned: 128 (wrong!)
+Result: 128 processes competing for 8 cores → severe contention
+```
+
+**Root Cause:** Python's `os.cpu_count()` returns the host's total CPU count, ignoring cgroup/cpuset restrictions.
+
+**Solution:** Use `os.sched_getaffinity(0)` which returns the set of CPUs the process can actually use, respecting cpuset limits.
+
+```python
+def get_available_cpus() -> int:
+    """Get CPUs available to this process (respects cpuset/cgroup)."""
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        return os.cpu_count() or 1
+```
+
+**Files Modified:**
+- `libs/libCRS/libCRS/config.py` - Added `get_available_cpus()`, replaced `os.cpu_count()` calls
+- `libs/libCRS/libCRS/__init__.py` - Export `get_available_cpus`
+- `bin/main.py` - Use `get_available_cpus()` for shm_size calculation
+
+### 6. Signal Handling for Result Saving
+
+**Problem:** When fuzzing was interrupted with Ctrl+C (SIGINT) or `docker stop` (SIGTERM), results were not saved because the cleanup code never ran.
+
+**Root Cause:** Two issues:
+1. Bash trap handlers are deferred while waiting on foreground processes
+2. Docker sends signals to PID 1 only, not to child processes
+
+**Solution:**
+1. Run `main.py` in background with `wait` (interruptible by signals)
+2. Add `init: true` to docker-compose.yml for proper signal handling
+3. Trap handler explicitly kills main.py and saves results
+
+```bash
+trap cleanup INT TERM
+
+main.py &
+MAIN_PID=$!
+wait $MAIN_PID
+```
+
+**Files Modified:**
+- `bin/run_crs` - Refactored with background process and trap handler
+- `oss-crs/docker-compose.yml` - Added `init: true` for tini as PID 1
+
 ---
 
 ## Bugs Fixed
@@ -356,6 +410,10 @@ HOST_ARTIFACT_DIR/
 ### CRS-Multilang Repository
 
 ```
+b842af94e fix: use sched_getaffinity for CPU count to respect cpuset limits
+fb830353e refactor: convert libCRS from submodule to regular directory
+b5e7cbed1 fix: handle signals properly for result saving on interrupt
+362371b24 docs: add DinD migration journey and output format sections to INTEGRATION.md
 9c9a2a96d refactor: rename /artifact to /artifacts for consistency with host path
 942d49dcb feat(oss-crs): pass CRS_SKIP_SAVE from run.sh to docker-compose
 1a80da369 feat(oss-crs): add CRS_SKIP_SAVE env var to docker-compose

@@ -3,3 +3,41 @@ sysctl -w fs.file-max=2097152
 ulimit -c 0
 get_cp
 main.py
+EXIT_CODE=$?
+
+# Save results to /artifact/ unless CRS_SKIP_SAVE=True
+if [ "$CRS_SKIP_SAVE" != "True" ] && [ -d "/artifact" ]; then
+    echo "=== Saving CRS results to /artifact/ ==="
+
+    # Create output directories
+    mkdir -p /artifact/povs /artifact/corpus /artifact/workdir_result
+
+    # Find and copy results from each harness workdir
+    for harness_dir in /crs-workdir/worker-*/HarnessRunner/*/; do
+        if [ -d "$harness_dir" ]; then
+            harness=$(basename "$harness_dir")
+            echo "Saving results for harness: $harness"
+
+            # Copy POVs
+            if [ -d "$harness_dir/pov" ] && [ "$(ls -A "$harness_dir/pov" 2>/dev/null)" ]; then
+                mkdir -p /artifact/povs/$harness
+                cp -r "$harness_dir/pov/"* /artifact/povs/$harness/ 2>/dev/null || true
+            fi
+
+            # Copy corpus (from uniafl_corpus)
+            if [ -d "$harness_dir/uniafl_corpus" ] && [ "$(ls -A "$harness_dir/uniafl_corpus" 2>/dev/null)" ]; then
+                mkdir -p /artifact/corpus/$harness
+                cp -r "$harness_dir/uniafl_corpus/"* /artifact/corpus/$harness/ 2>/dev/null || true
+            fi
+
+            # Copy full workdir
+            mkdir -p /artifact/workdir_result/$harness
+            cp -r "$harness_dir"/* /artifact/workdir_result/$harness/ 2>/dev/null || true
+        fi
+    done
+
+    echo "=== Results saved ==="
+    ls -la /artifact/
+fi
+
+exit $EXIT_CODE

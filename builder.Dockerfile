@@ -1,38 +1,37 @@
-# Build on top of parent_image - source code is already at /src
-ARG parent_image
-FROM ${parent_image}
+# DinD Builder for CRS-Multilang
+# Uses cruizba/ubuntu-dind as base for nested Docker daemon
+FROM cruizba/ubuntu-dind
 
+ARG parent_image
 ARG CRS_TARGET
+ENV PARENT_IMAGE=${parent_image}
 ENV PROJECT_NAME=${CRS_TARGET}
 
 ENV TZ=US \
     DEBIAN_FRONTEND=noninteractive
 
-# Install additional dependencies for run.py
-# Docker CLI needed for run.py build_crs (builds internal CRS images)
+# Install Python and dependencies for run.py
 RUN apt-get update -y && apt-get install -y \
-    python3-pip curl pigz rsync \
-    ca-certificates gnupg \
-    && install -m 0755 -d /etc/apt/keyrings \
-    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg \
-    && chmod a+r /etc/apt/keyrings/docker.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list \
-    && apt-get update -y \
-    && apt-get install -y docker-ce-cli \
+    git python3 python3-pip curl pigz rsync \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install coloredlogs pyyaml python-on-whales
+RUN pip3 install --break-system-packages coloredlogs pyyaml python-on-whales
 
 # Copy full crs-multilang source
+# Note: Cache is excluded via .dockerignore and mounted at runtime
 COPY . /crs-multilang
 
 # Copy oss-fuzz project files from additional_contexts (provided by oss-crs)
 COPY --from=project . /crs-multilang/libs/oss-fuzz/projects/${CRS_TARGET}/
 
-# Keep WORKDIR as parent's (e.g., /src/PROJECT_NAME) - oss-crs may copy local source here
-# build.sh does `cd /crs-multilang` to run CRS code
+# Cache mounted at runtime via volumes: ${CRS_CACHE_DIR}:/cache/images:ro
+ENV CRS_CACHE_DIR=/cache/images
 
-COPY oss-crs/build.sh /build.sh
+# Set WORKDIR to /workspace (oss-crs will copy project source here)
+WORKDIR /workspace
+
+# Copy and setup build script
+COPY oss-crs-dind/build.sh /build.sh
 RUN chmod +x /build.sh
 
 CMD ["/build.sh"]

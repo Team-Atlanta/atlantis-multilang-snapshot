@@ -23,6 +23,7 @@ services:
     image: crs-multilang/crs-multilang:latest
     container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
     privileged: true
+    init: true  # Use tini as PID 1 for proper signal handling
     cpuset: ${CPUSET_CPUS:-0-7}
     mem_limit: ${MEMORY_LIMIT:-16G}
     environment:

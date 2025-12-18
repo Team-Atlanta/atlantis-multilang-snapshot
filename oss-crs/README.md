@@ -80,12 +80,14 @@ oss-crs/
 | `PROJECT_NAME` | (required) | OSS-Fuzz project name |
 | `PARENT_IMAGE` | (required) | Docker image with project source |
 | `HOST_OUT_DIR` | `/out` | Host path to output directory (for volume mounts) |
+| `HOST_ARTIFACT_DIR` | `HOST_OUT_DIR` | Host path to artifacts directory |
 | `CPUSET_CPUS` | `0-7` | CPU cores for fuzzing |
 | `MEMORY_LIMIT` | `16G` | Memory limit for fuzzing |
 | `LITELLM_URL` | (optional) | LLM service URL |
 | `LITELLM_KEY` | (optional) | LLM service API key |
 | `CRS_TARGET` | (optional) | Target project name |
 | `CRS_NAME` | `crs-multilang` | CRS instance name |
+| `CRS_SKIP_SAVE` | (empty) | Set to `True` to skip saving results |
 
 ## Required Images
 
@@ -106,6 +108,30 @@ Build phase creates these tarballs in `/out/tarballs/`:
 | `repo.tar.gz` | Project source code extracted from parent image |
 | `project.tar.gz` | OSS-Fuzz project files (project.yaml, .aixcc/, fuzz/) |
 | `fuzzers.tar.gz` | Built fuzzer binaries and artifacts |
+
+## Results Output
+
+After fuzzing, results are automatically saved to `HOST_ARTIFACT_DIR` (mapped to `/artifacts` inside container):
+
+```
+HOST_ARTIFACT_DIR/
+├── tarballs/                    # Build artifacts (from build phase)
+├── povs/                        # Proof-of-Vulnerability inputs
+│   └── {harness_name}/
+├── corpus/                      # Corpus inputs (from uniafl_corpus)
+│   └── {harness_name}/
+├── workdir_result/              # Full workdir copy
+│   └── {harness_name}/
+│       ├── uniafl_corpus/
+│       ├── uniafl_cov/
+│       ├── pov/
+│       ├── others_corpus/
+│       └── uniafl/
+├── eval_result/                 # (if EVAL_SEC > 0)
+└── workdir_result/              # (if SAVE_WORKDIR_RESULT=True)
+```
+
+To disable automatic result saving, set `CRS_SKIP_SAVE=True`.
 
 ## Troubleshooting
 

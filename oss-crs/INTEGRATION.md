@@ -8,6 +8,137 @@ CRS-multilang uses a host Docker socket architecture for both build and run phas
 
 ---
 
+## Architecture Evolution: DinD to Host Docker Socket
+
+### Initial Approach: Docker-in-Docker (DinD)
+
+The initial integration attempted to use Docker-in-Docker (DinD) architecture, where a Docker daemon runs inside the builder/runner containers. This approach seemed natural since CRS-multilang heavily uses Docker for building and running fuzzing containers.
+
+**DinD Implementation:**
+```
+oss-crs (host)
+└── Builder Container (DinD)
+    └── Docker Daemon
+        └── CRS Build Containers
+```
+
+**Key Files (now removed):**
+- `oss-crs/config.sh` - DinD configuration
+- `oss-crs/load-cache.sh` - Cache loading into DinD
+- `oss-crs/prepare-cache.sh` - Cache preparation scripts
+- `oss-crs/verify-cache.sh` - Cache verification
+
+### DinD Performance Problems
+
+DinD suffered from severe performance issues:
+
+1. **Image Loading Overhead**: CRS-multilang images are large (multiple GB). Loading these into a fresh DinD daemon on every build was extremely slow, even with caching.
+
+2. **No Layer Sharing**: DinD cannot share layers with the host Docker daemon, resulting in duplicate storage and no benefit from host-side layer caching.
+
+3. **Build Time**: Building CRS images inside DinD meant rebuilding from scratch each time, as layer cache was not persistent.
+
+4. **Cache Management Complexity**: Required complex scripts to export/import Docker images as tarballs, adding I/O overhead.
+
+### AIXCC Architecture Incompatibility
+
+The AIXCC evaluation framework expects a specific container interface:
+- Builder and Runner are separate containers
+- Each receives specific volume mounts (`/work`, `/out`)
+- No nested Docker daemons expected
+
+DinD added complexity that didn't align with this model, requiring workarounds for networking, storage, and process isolation.
+
+### Solution: Host Docker Socket
+
+Switched to mounting the host Docker socket (`/var/run/docker.sock`) into builder/runner containers:
+
+```
+oss-crs (host)
+├── Docker Daemon (host)
+│   ├── CRS Build Containers (direct)
+│   └── CRS Runner Containers (direct)
+├── Builder Container (docker CLI only)
+└── Runner Container (docker CLI only)
+```
+
+**Benefits:**
+- **Instant layer caching**: Host daemon's layer cache is immediately available
+- **No image loading**: Images built once are available everywhere
+- **Simpler architecture**: No nested daemons to manage
+- **AIXCC compatible**: Fits expected builder/runner container model
+
+**Trade-offs:**
+- Requires `HOST_WORK_DIR` and `HOST_OUT_DIR` environment variables for path mapping
+- Must handle path translation between container and host paths
+- Host Docker daemon is shared (potential isolation concerns in multi-tenant scenarios)
+
+### Key Commits
+
+```
+252a7abb4 feat(dind): add builder container for oss-crs integration
+5708cca07 feat(dind): add runner container for oss-crs integration
+db55dbbd6 feat(dind): add cache loading and runtime scripts
+c0687c85a refactor(build): use host docker socket instead of DinD for layer caching
+6e405bcbf feat: add host docker socket mode with HOST_WORK_DIR/HOST_OUT_DIR env vars
+6d0103edb feat(runner): use host docker socket instead of DinD
+e79f491bc chore: remove old DinD cache scripts and update README
+```
+
+---
+
+## Output Format Incompatibility
+
+### OSS-CRS Default Interface
+
+OSS-CRS provides builders and runners with two volume mounts:
+- `/work` - Build working directory
+- `/out` - Build output directory
+
+Both are designed for the **build process**, not for storing fuzzing results.
+
+### CRS-Multilang Output Needs
+
+CRS-multilang produces various outputs during fuzzing:
+- **POVs**: Proof-of-vulnerability inputs
+- **Corpus**: Test cases discovered during fuzzing
+- **Coverage data**: Code coverage information
+- **Workdir**: Full working directory with intermediate data
+
+These are stored in `/crs-workdir` inside the container, which is ephemeral.
+
+### The `/out` Directory Problem
+
+Using `/out` for results was problematic:
+- `/out` is cleaned on each rebuild
+- Build outputs (fuzzers) and fuzzing results (POVs, corpus) have different lifecycles
+- Mixing them causes data loss on rebuild
+
+### Solution: `/artifacts` Directory
+
+Introduced `HOST_ARTIFACT_DIR` mapped to `/artifacts`:
+
+```
+HOST_OUT_DIR → /out           # Build outputs (ephemeral)
+HOST_ARTIFACT_DIR → /artifacts # Results (persistent)
+```
+
+**Structure:**
+```
+HOST_ARTIFACT_DIR/
+├── tarballs/          # Build artifacts (repo, project, fuzzers)
+├── povs/              # POV files by harness
+├── corpus/            # Corpus by harness
+└── workdir_result/    # Full workdir backup
+```
+
+This separation ensures:
+- Build outputs can be cleaned without losing results
+- Results survive across multiple build/run cycles
+- Clear distinction between build artifacts and fuzzing results
+
+---
+
 ## Key Challenges
 
 ### 1. Host Docker Socket Path Mapping

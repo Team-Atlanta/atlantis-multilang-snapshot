@@ -409,18 +409,90 @@ HOST_ARTIFACT_DIR/
 
 ### CRS-Multilang Repository
 
+#### Runtime Fixes
 ```
 b842af94e fix: use sched_getaffinity for CPU count to respect cpuset limits
-fb830353e refactor: convert libCRS from submodule to regular directory
 b5e7cbed1 fix: handle signals properly for result saving on interrupt
-362371b24 docs: add DinD migration journey and output format sections to INTEGRATION.md
+```
+
+#### libCRS Integration
+```
+fb830353e refactor: convert libCRS from submodule to regular directory
+```
+
+#### Results Storage
+```
 9c9a2a96d refactor: rename /artifact to /artifacts for consistency with host path
 942d49dcb feat(oss-crs): pass CRS_SKIP_SAVE from run.sh to docker-compose
 1a80da369 feat(oss-crs): add CRS_SKIP_SAVE env var to docker-compose
 ed5f3f195 feat: save fuzzing results to /artifacts/ by default in run_crs
 85b4ab59d feat(oss-crs): add /artifacts volume mount for results storage
+0306aa2e8 feat: use HOST_ARTIFACT_DIR for artifacts separate from oss-fuzz work/out dirs
+```
+
+#### Build Output Separation
+```
 66c958100 feat: add HOST_OUT_SUBDIR for coverage/symcc/lsp build separation
+9eca34bee refactor(build): separate tarballs to /out/tarballs/ subdirectory
+d59254aa4 refactor: eliminate /out/tarballs, use /out directly
+```
+
+#### Network & Container Isolation
+```
 b577ee649 fix(oss-crs): add network isolation and fix Redis URL parsing
+803b52d20 feat(compose): add container names and resource limits for isolation
+378414be0 feat(run): add harness-specific crs.config and sanitized container names
+11c2e3714 fix(runner): add network connectivity, cleanup, and unique project names
+```
+
+#### DinD to Host Docker Socket Migration
+```
+252a7abb4 feat(dind): add builder container for oss-crs integration
+5708cca07 feat(dind): add runner container for oss-crs integration
+db55dbbd6 feat(dind): add cache loading and runtime scripts
+cafba7825 fix(dind): align runner with oss-crs interface
+687b1e77b feat(cache): support both .tar and .tar.gz formats, prefer .tar for speed
+7e4b959e1 refactor(cache): mount cache in runner instead of copying from builder
+c0687c85a refactor(build): use host docker socket instead of DinD for layer caching
+6e405bcbf feat: add host docker socket mode with HOST_WORK_DIR/HOST_OUT_DIR env vars
+6d0103edb feat(runner): use host docker socket instead of DinD
+e79f491bc chore: remove old DinD cache scripts and update README
+```
+
+#### Build Fixes
+```
+708e48753 fix(build): add target.build() to compile fuzzers in build_for_multilang
+ef038ee1d fix(build): capture source dir from parent WORKDIR before cd
+c9b851506 fix(builder): remove WORKDIR to preserve parent's for oss-crs source copy
+d4458f71c fix(builder): copy oss-fuzz project files from additional context
+ae4bb286e fix(build): skip image pull when registry is 'local'
+2243e2e54 fix(build): use run.py build_crs for CRS image building
+18ea74967 fix(build): skip docker load, use parent image directly from host
+5bf70cc78 fix(build): copy fuzzers.tar.gz instead of re-tarring entire /out
+176538fb6 fix(build): create project.tar.gz from actual project directory
+e174dff07 fix(run.py): convert to host path only in __construct_cmd for Docker mounts
+```
+
+#### Runner/Builder Simplification
+```
+64f07d2bb refactor(runner): simplify to docker-cli only orchestrator
+1016e8a6b refactor(build): simplify source extraction with /src mount
+97c68febd feat(builder): use parent_image as base with source at /src
+23ea9aebd feat(run.py): add --start-other-services flag for build command
+```
+
+#### Infrastructure
+```
+f68175c00 fix(Dockerfile): build Python 3.10 from source instead of ppa
+4dd715bc2 build: exclude cache directory from git and docker context
+```
+
+#### Documentation
+```
+04f7d1c51 docs: add CPU count and signal handling challenges to INTEGRATION.md
+362371b24 docs: add DinD migration journey and output format sections to INTEGRATION.md
+7cf381fa0 docs(oss-crs): add results output section and integration notes
+6f65d1fa5 refactor: document CONTAINER_MODE vs HOST_MODE execution contexts
 ```
 
 ### OSS-CRS Repository

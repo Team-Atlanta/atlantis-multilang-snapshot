@@ -39,6 +39,16 @@ fi
 # Determine compose file based on CRS_INPUT_GENS
 CRS_INPUT_GENS="${CRS_INPUT_GENS:-given_fuzzer}"
 if echo "$CRS_INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
+    # MLLA mode requires CRS_TARGET and LSP runner image
+    if [ -z "${CRS_TARGET:-}" ]; then
+        echo "ERROR: CRS_TARGET must be set for MLLA mode"
+        exit 1
+    fi
+    if [ ! -f /artifacts/images/lsp-runner.tar.gz ]; then
+        echo "ERROR: LSP runner image not found at /artifacts/images/lsp-runner.tar.gz"
+        echo "MLLA mode requires LSP runner. Ensure build phase created it."
+        exit 1
+    fi
     COMPOSE_FILE="/app/docker-compose.mlla.yml"
     echo "Using MLLA mode (docker-compose.mlla.yml)"
 else

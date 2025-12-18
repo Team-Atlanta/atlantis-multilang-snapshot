@@ -39,7 +39,7 @@ services:
       - crs-network
 
   lsp:
-    image: multilang-lsp-${CRS_TARGET:-project}:latest
+    image: multilang-lsp-${CRS_TARGET}:latest
     environment:
       - TARBALL_DIR=/tarballs
       - CRS_TARGET=${CRS_TARGET:-}

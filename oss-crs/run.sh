@@ -20,7 +20,8 @@ export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}"
 cleanup() {
     echo "=== Signal received, stopping services... ==="
     cd /app 2>/dev/null || true
-    docker compose down --remove-orphans 2>/dev/null || true
+    # Stop all services including those in 'others' profile
+    docker compose --profile others down --remove-orphans 2>/dev/null || true
     exit 130
 }
 
@@ -29,6 +30,14 @@ trap cleanup INT TERM
 
 echo "=== CRS-Multilang Run Phase (Host Docker) ==="
 echo "Harness: $HARNESS_NAME"
+
+# Get our own container ID for cleanup sidecar
+RUNNER_CONTAINER_ID=$(cat /proc/self/cgroup 2>/dev/null | grep -oP '(?<=docker/)[a-f0-9]+' | head -1)
+# Fallback: hostname is often container ID
+[ -z "$RUNNER_CONTAINER_ID" ] && RUNNER_CONTAINER_ID=$(hostname)
+export RUNNER_CONTAINER_ID
+echo "Runner container ID: $RUNNER_CONTAINER_ID"
+
 echo "Environment:"
 echo "  CPUSET_CPUS: ${CPUSET_CPUS:-not set}"
 echo "  MEMORY_LIMIT: ${MEMORY_LIMIT:-not set}"
@@ -159,9 +168,9 @@ fi
 EXIT_CODE=$?
 set -e
 
-# Cleanup containers
+# Cleanup containers (include profile to stop all services)
 echo "Cleaning up containers..."
-docker compose down --remove-orphans 2>/dev/null || true
+docker compose --profile others down --remove-orphans 2>/dev/null || true
 
 echo "=== Run complete (exit code: $EXIT_CODE) ==="
 exit $EXIT_CODE

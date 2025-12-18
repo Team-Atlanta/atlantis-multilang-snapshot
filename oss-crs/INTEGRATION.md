@@ -418,6 +418,83 @@ All services share the same CPU set, ensuring they don't interfere with other wo
 **Files Modified:**
 - `oss-crs/docker-compose.yml` - Added `cpuset` to all services
 
+### 11. Conditional Service Startup with Profiles
+
+**Problem:** Services like joern, codeindexer, and lsp are only needed when certain input generators (mlla, testlang_input_gen) are configured. Running them for basic fuzzing (given_fuzzer only) wastes resources.
+
+**Solution:** Used Docker Compose profiles to conditionally start services:
+
+| Service | Profile | Always Runs | Rationale |
+|---------|---------|-------------|-----------|
+| redis | (none) | ✅ | CRS always needs Redis for dict_input_gen |
+| joern | `others` | ❌ | Only mlla/testlang need code analysis |
+| codeindexer | `others` | ❌ | Only mlla/testlang need code index |
+| lsp | `others` | ❌ | Only mlla/testlang need LSP |
+| crs | (none) | ✅ | Main fuzzing container |
+| cleanup | (none) | ✅ | Sidecar for container cleanup |
+
+**Implementation in `run.sh`:**
+```bash
+# Check if other services are needed (mlla or testlang_input_gen)
+NEEDS_OTHER_SERVICES=false
+if echo "$INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
+    NEEDS_OTHER_SERVICES=true
+fi
+
+# Run services
+if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
+    docker compose --profile others up --exit-code-from crs
+else
+    docker compose up --exit-code-from crs
+fi
+```
+
+**Files Modified:**
+- `oss-crs/docker-compose.yml` - Added `profiles: ["others"]` to joern, codeindexer, lsp
+- `oss-crs/run.sh` - Added conditional profile activation based on `CRS_INPUT_GENS`
+
+### 12. Container Cleanup Sidecar
+
+**Problem:** When the runner container is stopped externally (e.g., by oss-crs timeout or `docker stop`), the containers spawned by docker-compose (redis, crs, joern, etc.) continue running as orphans on the host Docker daemon. This happens because:
+1. Runner uses host Docker socket, so spawned containers are siblings, not children
+2. Docker doesn't have native post-stop hooks
+3. `docker compose down` in trap handler doesn't run if runner is killed with SIGKILL
+
+**Solution:** Implemented a cleanup sidecar container that monitors the runner and stops all services when runner exits:
+
+```yaml
+cleanup:
+  image: docker:cli
+  container_name: cleanup_${SAFE_TARGET}_${SAFE_HARNESS}
+  volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+  environment:
+    - RUNNER_CONTAINER_ID=${RUNNER_CONTAINER_ID:-}
+    - COMPOSE_PROJECT_NAME
+  entrypoint: ["/bin/sh", "-c"]
+  command:
+    - |
+      echo "Cleanup sidecar started, monitoring runner: $RUNNER_CONTAINER_ID"
+      if [ -z "$RUNNER_CONTAINER_ID" ]; then
+        echo "WARNING: RUNNER_CONTAINER_ID not set, cleanup disabled"
+        sleep infinity
+      fi
+      docker wait $RUNNER_CONTAINER_ID || true
+      echo "Runner exited, stopping all services..."
+      docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" | xargs -r docker stop
+  restart: "no"
+```
+
+**How it works:**
+1. Runner detects its own container ID via `/proc/self/cgroup` or hostname
+2. `RUNNER_CONTAINER_ID` is exported and passed to docker-compose
+3. Cleanup sidecar uses `docker wait` to block until runner exits
+4. When runner exits (for any reason), sidecar stops all containers in the compose project
+
+**Files Modified:**
+- `oss-crs/docker-compose.yml` - Added `cleanup` sidecar service
+- `oss-crs/run.sh` - Added `RUNNER_CONTAINER_ID` detection and export
+
 ---
 
 ## Bugs Fixed
@@ -469,6 +546,11 @@ All services share the same CPU set, ensuring they don't interfere with other wo
 | `CRS_SKIP_SAVE` | Skip saving results to `/artifacts` |
 | `CRS_EXTERNAL_NETWORK` | External network name for LiteLLM |
 | `CRS_INPUT_GENS` | Comma-separated input generators (default: `given_fuzzer`) |
+| `RUN_FUZZER_MODE` | Fuzzer execution mode (default: `interactive`) |
+| `HELPER` | OSS-Fuzz helper mode flag (default: `True`) |
+| `CRS_INTERACTIVE` | CRS interactive mode flag (default: `True`) |
+| `SEED_SHARE_DIR` | Directory for shared seeds between harnesses |
+| `LSP_SERVER_URL` | LSP server URL for code analysis |
 
 ### Docker Compose Changes
 
@@ -479,11 +561,39 @@ volumes:
   - ${HOST_OUT_DIR:-/out}:/out                         # Build output
 
 environment:
+  # Fuzzing configuration (must match run.py expectations)
+  - FUZZING_ENGINE=${FUZZING_ENGINE:-libfuzzer}
+  - SANITIZER=${SANITIZER:-address}
+  - RUN_FUZZER_MODE=${RUN_FUZZER_MODE:-interactive}
+  - HELPER=True
+  - CRS_INTERACTIVE=True
+  - SEED_SHARE_DIR=/seed_share_dir
+  # Service URLs
+  - CODE_INDEXER_REDIS_URL=redis://redis:6379
+  - DICTGEN_REDIS_URL=redis://redis:6379
+  - JOERN_URL=http://joern:9909
+  - LSP_SERVER_URL=http://lsp:3303  # Note: LSP_SERVER_URL, not LSP_URL
+  # Other
   - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
+  - RUNNER_CONTAINER_ID=${RUNNER_CONTAINER_ID:-}       # For cleanup sidecar
 
 networks:
   crs-internal:    # Project-scoped, isolated
   crs-external:    # Shared for LiteLLM
+
+# Service dependencies
+crs:
+  depends_on:
+    - redis        # CRS always needs Redis
+
+# Conditional services (profile: others)
+joern, codeindexer, lsp:
+  profiles: ["others"]   # Only start when mlla/testlang enabled
+
+# Cleanup sidecar
+cleanup:
+  image: docker:cli
+  # Monitors runner and stops all containers when runner exits
 ```
 
 ---
@@ -564,6 +674,9 @@ HOST_ARTIFACT_DIR/
 - [ ] `CRS_SKIP_SAVE=True` disables result saving
 - [ ] Symcc/coverage/lsp builds use separate directories
 - [ ] Redis and Joern services are accessible
+- [ ] Cleanup sidecar stops containers when runner exits
+- [ ] Profile "others" only starts joern/codeindexer/lsp when mlla/testlang enabled
+- [ ] `CRS_INPUT_GENS` correctly configures input generators
 
 ---
 
@@ -607,6 +720,15 @@ b577ee649 fix(oss-crs): add network isolation and fix Redis URL parsing
 803b52d20 feat(compose): add container names and resource limits for isolation
 378414be0 feat(run): add harness-specific crs.config and sanitized container names
 11c2e3714 fix(runner): add network connectivity, cleanup, and unique project names
+```
+
+#### Service Orchestration
+```
+37d1940ae fix(oss-crs): add redis dependency to crs service
+85a1fba4c feat(oss-crs): add cleanup sidecar and fix redis profile
+fe36119ba feat(oss-crs): add configurable input generators and optional service profiles
+acd484b65 fix(oss-crs): use CRS_TARGET env var for LSP runner image name
+643b01c08 feat(oss-crs): add LSP service to docker-compose
 ```
 
 #### DinD to Host Docker Socket Migration

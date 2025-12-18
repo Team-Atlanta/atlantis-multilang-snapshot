@@ -7,7 +7,6 @@ services:
     command: redis-server --appendonly yes
     restart: unless-stopped
     cpuset: ${CPUSET_CPUS:-0-7}
-    profiles: ["others"]
     networks:
       - crs-internal
 
@@ -63,7 +62,6 @@ services:
     image: crs-multilang/crs-multilang:latest
     container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
     privileged: true
-    init: true  # Use tini as PID 1 for proper signal handling
     cpuset: ${CPUSET_CPUS:-0-7}
     mem_limit: ${MEMORY_LIMIT:-16G}
     environment:
@@ -75,27 +73,56 @@ services:
       - CPUSET_CPUS=${CPUSET_CPUS:-0-7}
       - FUZZING_ENGINE=${FUZZING_ENGINE:-libfuzzer}
       - SANITIZER=${SANITIZER:-address}
+      - RUN_FUZZER_MODE=${RUN_FUZZER_MODE:-interactive}
+      - HELPER=True
+      - CRS_INTERACTIVE=True
       - CRS_TARGET=${CRS_TARGET:-}
+      - SEED_SHARE_DIR=/seed_share_dir
       - CRS_NAME=${CRS_NAME:-crs-multilang}
       - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
       # Use service names - they resolve on crs-internal network (project-scoped)
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909
-      - LSP_URL=http://lsp:3303
+      - LSP_SERVER_URL=http://lsp:3303
     volumes:
       - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
       - ${HOST_ARTIFACT_DIR:-/out}:/artifacts
       - ${HOST_OUT_DIR:-/out}:/out
       - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
-    # Note: No depends_on - other services are optional (profile: others)
-    # When profile "others" is active, services start via their own depends_on chain
+    depends_on:
+      - redis
+    # Note: No depends_on for optional services (profile: others)
     networks:
       # Internal network for redis/joern communication (project-scoped, isolated)
       - crs-internal
       # External network for LiteLLM connectivity (optional, shared)
       - crs-external
     command: ["run_crs"]
+
+  # Cleanup sidecar: monitors runner container and stops all services when runner exits
+  # This ensures containers are cleaned up even if runner is killed externally
+  cleanup:
+    image: docker:cli
+    container_name: cleanup_${SAFE_TARGET}_${SAFE_HARNESS}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - RUNNER_CONTAINER_ID=${RUNNER_CONTAINER_ID:-}
+      - COMPOSE_PROJECT_NAME
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Cleanup sidecar started, monitoring runner: $RUNNER_CONTAINER_ID"
+        if [ -z "$RUNNER_CONTAINER_ID" ]; then
+          echo "WARNING: RUNNER_CONTAINER_ID not set, cleanup disabled"
+          sleep infinity
+        fi
+        docker wait $RUNNER_CONTAINER_ID || true
+        echo "Runner exited, stopping all services..."
+        # Use longer timeout (30s) to allow crs to save results before SIGKILL
+        docker ps -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" | xargs -r docker stop -t 30
+    restart: "no"
 
 networks:
   # Internal network: Always created, project-scoped, isolated per project/harness

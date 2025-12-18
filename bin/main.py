@@ -13,7 +13,7 @@ from pathlib import Path
 import pyinotify
 import yaml
 from fuzzdb import FuzzDB
-from libCRS import CRS, Config, HarnessRunner, Module, init_cp_in_runner, util
+from libCRS import CRS, Config, HarnessRunner, Module, init_cp_in_runner, util, get_available_cpus
 from libCRS.challenge import CP_Harness
 from libCRS.otel import install_otel_logger
 from libCRS.util import TestResult
@@ -933,7 +933,7 @@ TMP_CONF = Path("/src/.aixcc/config.yaml.tmp")
 if __name__ == "__main__":
     install_otel_logger(action_name="main")
     conf = Config(0, 1).load("/crs.config")
-    shm_size = os.cpu_count() * 4
+    shm_size = get_available_cpus() * 4
     os.system(f"mount -o remount,size={shm_size}G /dev/shm")
     os.system("touch /dev/shm/aa")
     shm = Path("/dev/shm")

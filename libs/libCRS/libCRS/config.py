@@ -7,7 +7,20 @@ import sys
 from .challenge import CP, CP_Harness
 from .util import SharedFile, get_env
 
-__all__ = ["Config"]
+__all__ = ["Config", "get_available_cpus"]
+
+
+def get_available_cpus() -> int:
+    """Get the number of CPUs available to this process.
+
+    Uses sched_getaffinity() which respects cpuset/cgroup limits,
+    unlike os.cpu_count() which returns the host's total CPU count.
+    """
+    try:
+        return len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        # Fallback for systems without sched_getaffinity
+        return os.cpu_count() or 1
 
 NODE_IDX = "NODE_IDX"
 NODE_CNT = "NODE_CNT"
@@ -103,7 +116,7 @@ class Config:
         self.test_wo_harness: bool = (
             os.environ.get("CRS_TEST_WO_HARNESS", "True") == "True"
         )
-        self.ncpu: int = os.cpu_count()
+        self.ncpu: int = get_available_cpus()
         if os.environ.get("N_CPU"):
             self.ncpu = int(os.environ.get("N_CPU"))
         self.n_llm_lock: int = 3
@@ -124,7 +137,7 @@ class Config:
             if key in config:
                 setattr(self, key, config[key])
         self.ncpu = int(self.ncpu)
-        env_ncpu = os.cpu_count()
+        env_ncpu = get_available_cpus()
         if env_ncpu < self.ncpu:
             self.ncpu = env_ncpu
         self.n_llm_lock = int(self.n_llm_lock)

@@ -32,7 +32,7 @@ mkdir -p "$CRS_CACHE_DIR"
 echo "[1/4] Building all CRS images via run.py build_crs --build-base-img..."
 echo "      This builds: multilang-clang, multilang-builder, multilang-builder-jvm,"
 echo "                   crs-multilang, multilang-c-archive, multilang-jvm-archive, multilang-lsp-base"
-python3 run.py build_crs --build-base-img --skip-symcc-verification
+uv run python run.py build_crs --build-base-img --skip-symcc-verification
 
 # Step 2: Build joern service image
 echo ""

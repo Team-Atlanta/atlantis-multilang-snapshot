@@ -153,6 +153,21 @@ cd /app
 NEEDS_OTHER_SERVICES=false
 if echo "$INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
     NEEDS_OTHER_SERVICES=true
+    # MLLA mode requires CRS_TARGET and LSP runner image
+    if [ -z "${CRS_TARGET:-}" ]; then
+        echo "ERROR: CRS_TARGET must be set for MLLA mode"
+        exit 1
+    fi
+    if [ -z "$LSP_RUNNER" ]; then
+        echo "ERROR: LSP_RUNNER not set. CRS_TARGET is required for MLLA mode."
+        exit 1
+    fi
+    if ! docker image inspect "$LSP_RUNNER" > /dev/null 2>&1; then
+        echo "ERROR: LSP runner image not found: $LSP_RUNNER"
+        echo "Ensure builder phase created the LSP runner image for project: $CRS_TARGET"
+        exit 1
+    fi
+    echo "  Found: $LSP_RUNNER"
 fi
 
 # Run services using appropriate compose file

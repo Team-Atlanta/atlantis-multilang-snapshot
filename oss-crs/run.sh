@@ -4,6 +4,29 @@ set -eu
 HARNESS_NAME="$1"
 shift || true
 
+# Sanitize names for docker compose project/container naming (replace special chars with underscore)
+sanitize_name() {
+    echo "$1" | tr -c 'a-zA-Z0-9_-' '_' | sed 's/_*$//'
+}
+
+# Set COMPOSE_PROJECT_NAME early so cleanup can use it
+SAFE_TARGET=$(sanitize_name "${CRS_TARGET:-crs}")
+SAFE_HARNESS=$(sanitize_name "$HARNESS_NAME")
+export SAFE_TARGET
+export SAFE_HARNESS
+export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}"
+
+# Cleanup function to stop docker-compose services on signal
+cleanup() {
+    echo "=== Signal received, stopping services... ==="
+    cd /app 2>/dev/null || true
+    docker compose down --remove-orphans 2>/dev/null || true
+    exit 130
+}
+
+# Trap signals to ensure docker-compose cleanup
+trap cleanup INT TERM
+
 echo "=== CRS-Multilang Run Phase (Host Docker) ==="
 echo "Harness: $HARNESS_NAME"
 echo "Environment:"
@@ -64,23 +87,9 @@ if [ -n "${CRS_EXTERNAL_NETWORK:-}" ]; then
 else
     echo "Using local networks (standalone mode)"
     export CRS_NETWORK_EXTERNAL="false"
-    # Create a unique local network name per project/harness to avoid conflicts
-    # This will be overwritten after SAFE_TARGET/SAFE_HARNESS are computed below
 fi
 
-# Sanitize names for docker compose project/container naming (replace special chars with underscore)
-sanitize_name() {
-    echo "$1" | tr -c 'a-zA-Z0-9_-' '_' | sed 's/_*$//'
-}
-SAFE_TARGET=$(sanitize_name "${CRS_TARGET:-crs}")
-SAFE_HARNESS=$(sanitize_name "$HARNESS_NAME")
-
-# Export sanitized names for docker-compose container naming only
-# Keep original CRS_TARGET and HARNESS_NAME for CRS internal use
-export SAFE_TARGET
-export SAFE_HARNESS
-
-# Set unique external network name for standalone mode (after SAFE_TARGET/SAFE_HARNESS are computed)
+# Set unique external network name for standalone mode
 if [ "${CRS_NETWORK_EXTERNAL}" = "false" ]; then
     # Use unique network name per project/harness to avoid conflicts
     export CRS_EXTERNAL_NETWORK="${SAFE_TARGET}_${SAFE_HARNESS}_external"
@@ -104,11 +113,8 @@ echo "Generated crs.config at $HOST_CRS_CONFIG:"
 cat "/out/crs.config.${SAFE_HARNESS}"
 
 # Start all services with docker compose
-# Use unique project name to avoid conflicts when running multiple instances
-COMPOSE_PROJECT="${SAFE_TARGET}_${SAFE_HARNESS}"
-export COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT"
-
-echo "Starting services with docker compose (project: $COMPOSE_PROJECT)..."
+# COMPOSE_PROJECT_NAME is set at the top of the script for cleanup trap
+echo "Starting services with docker compose (project: $COMPOSE_PROJECT_NAME)..."
 cd /app
 
 # Run and capture exit code

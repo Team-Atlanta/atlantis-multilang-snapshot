@@ -50,6 +50,7 @@ docker run --privileged --rm \
   -v $(pwd)/oss-crs-dind/cache/images:/cache/images:ro \
   -v /path/to/project-image.tar:/project-image.tar:ro \
   -v /path/to/out:/out \
+  -v /path/to/artifacts:/artifacts \
   -e PROJECT_NAME=myproject \
   -e PARENT_IMAGE=gcr.io/oss-fuzz/myproject \
   crs-builder-dind
@@ -64,9 +65,36 @@ docker build -t crs-runner-dind -f oss-crs-dind/runner.Dockerfile .
 # Run fuzzing
 docker run --privileged --rm \
   -v /path/to/out:/out \
+  -v /path/to/artifacts:/artifacts \
   -e CPUSET_CPUS=0-7 \
   -e MEMORY_LIMIT=16G \
   crs-runner-dind my_harness_name
+```
+
+## Volume Structure
+
+| Host Path | Container Path | Purpose |
+|-----------|----------------|---------|
+| `/path/to/cache/images` | `/cache/images` | Pre-built image cache (build only) |
+| `/path/to/out` | `/out` | Build outputs (fuzzers) |
+| `/path/to/artifacts` | `/artifacts` | Tarballs + results (persistent) |
+
+**Artifacts directory structure:**
+```
+/artifacts/
+├── tarballs/          # Build artifacts (created by builder)
+│   ├── repo.tar.gz
+│   ├── project.tar.gz
+│   ├── fuzzers.tar.gz
+│   └── aixcc_conf.yaml
+├── images/            # Runtime images (created by builder)
+│   ├── crs-multilang.tar.gz
+│   ├── joern.tar.gz
+│   ├── redis.tar.gz
+│   └── lsp-runner.tar.gz (if MLLA mode)
+├── povs/              # POV files (created by runner)
+├── corpus/            # Corpus files (created by runner)
+└── workdir_result/    # Full workdir backup (created by runner)
 ```
 
 ## Directory Structure
@@ -135,6 +163,7 @@ For MLLA (LLM-assisted) fuzzing, set `CRS_INPUT_GENS` to include `mlla`:
 ```bash
 docker run --privileged --rm \
   -v /path/to/out:/out \
+  -v /path/to/artifacts:/artifacts \
   -e CPUSET_CPUS=0-7 \
   -e MEMORY_LIMIT=16G \
   -e CRS_INPUT_GENS=given_fuzzer,mlla \

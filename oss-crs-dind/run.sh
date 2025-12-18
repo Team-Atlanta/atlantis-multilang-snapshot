@@ -23,21 +23,18 @@ while ! docker info > /dev/null 2>&1; do
 done
 echo "Docker daemon ready"
 
-# Load images from /out/images/ (docker load auto-detects gzip)
+# Load images from /artifacts/images/ (docker load auto-detects gzip)
 echo ""
-echo "Loading images from /out/images/..."
-docker load -i /out/images/crs-multilang.tar.gz
-docker load -i /out/images/joern.tar.gz
-docker load -i /out/images/redis.tar.gz
+echo "Loading images from /artifacts/images/..."
+docker load -i /artifacts/images/crs-multilang.tar.gz
+docker load -i /artifacts/images/joern.tar.gz
+docker load -i /artifacts/images/redis.tar.gz
 
 # Load LSP runner image if available (for MLLA mode)
-if [ -f /out/images/lsp-runner.tar.gz ]; then
+if [ -f /artifacts/images/lsp-runner.tar.gz ]; then
     echo "Loading LSP runner image..."
-    docker load -i /out/images/lsp-runner.tar.gz
+    docker load -i /artifacts/images/lsp-runner.tar.gz
 fi
-
-# Create artifacts directory for results (separate from build outputs)
-mkdir -p /out/artifacts
 
 # Determine compose file based on CRS_INPUT_GENS
 CRS_INPUT_GENS="${CRS_INPUT_GENS:-given_fuzzer}"

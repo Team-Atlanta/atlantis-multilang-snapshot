@@ -33,9 +33,9 @@ services:
       - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
       - DICTGEN_REDIS_URL=redis://redis:6379
     volumes:
-      - /out/tarballs:/tarballs:ro
+      - /artifacts/tarballs:/tarballs:ro
       - /out:/out
-      - /out/artifacts:/artifacts
+      - /artifacts:/artifacts
       - /tmp/crs.config:/crs.config:ro
     depends_on:
       - redis

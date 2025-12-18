@@ -33,7 +33,7 @@ docker load -i /project-image.tar
 # Step 3: Prepare tarballs for run.py build
 echo ""
 echo "[3/6] Preparing tarballs..."
-TARBALL_DIR=/out/tarballs
+TARBALL_DIR=/artifacts/tarballs
 mkdir -p "$TARBALL_DIR"
 
 # Extract source code from parent image's WORKDIR
@@ -79,7 +79,7 @@ python3 run.py build \
 # Step 5: Create fuzzers tarball
 echo ""
 echo "[5/6] Creating fuzzers.tar.gz from /out..."
-cd /out && tar -cvzf "$TARBALL_DIR/fuzzers.tar.gz" --exclude=tarballs --exclude=images . && cd /crs-multilang
+cd /out && tar -cvzf "$TARBALL_DIR/fuzzers.tar.gz" . && cd /crs-multilang
 
 # Mark build as done
 touch "$TARBALL_DIR/DONE"
@@ -87,17 +87,17 @@ touch "$TARBALL_DIR/DONE"
 # Step 6: Copy runtime images for runner
 echo ""
 echo "[6/6] Copying runtime images for runner..."
-mkdir -p /out/images
-cp "$CRS_CACHE_DIR/crs-multilang.tar.gz" /out/images/crs-multilang.tar.gz
-cp "$CRS_CACHE_DIR/multilang-runner-joern.tar.gz" /out/images/joern.tar.gz
-cp "$CRS_CACHE_DIR/redis.tar.gz" /out/images/redis.tar.gz
+mkdir -p /artifacts/images
+cp "$CRS_CACHE_DIR/crs-multilang.tar.gz" /artifacts/images/crs-multilang.tar.gz
+cp "$CRS_CACHE_DIR/multilang-runner-joern.tar.gz" /artifacts/images/joern.tar.gz
+cp "$CRS_CACHE_DIR/redis.tar.gz" /artifacts/images/redis.tar.gz
 
 # Export LSP runner image if it was built (for MLLA mode)
 SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_')
 LSP_RUNNER_IMAGE="multilang-lsp-$SAFE_PROJECT"
 if docker image inspect "$LSP_RUNNER_IMAGE" > /dev/null 2>&1; then
     echo "Exporting LSP runner image: $LSP_RUNNER_IMAGE"
-    docker save "$LSP_RUNNER_IMAGE" | gzip > "/out/images/lsp-runner.tar.gz"
+    docker save "$LSP_RUNNER_IMAGE" | gzip > "/artifacts/images/lsp-runner.tar.gz"
 else
     echo "Note: LSP runner image not found (MLLA mode will not be available)"
 fi
@@ -107,8 +107,8 @@ echo "=== Build complete ==="
 echo "Output in /out/:"
 ls -la /out/
 echo ""
-echo "Tarballs in /out/tarballs/:"
-ls -la /out/tarballs/
+echo "Tarballs in /artifacts/tarballs/:"
+ls -la /artifacts/tarballs/
 echo ""
-echo "Images in /out/images/:"
-ls -la /out/images/
+echo "Images in /artifacts/images/:"
+ls -la /artifacts/images/

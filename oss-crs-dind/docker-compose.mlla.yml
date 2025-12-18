@@ -1,0 +1,90 @@
+version: '3.8'
+
+# DinD MLLA mode: redis + codeindexer + joern + lsp + crs
+# No cleanup sidecar needed - when outer container stops, all nested containers die
+# Use this when CRS_INPUT_GENS includes mlla or testlang_input_gen
+
+services:
+  redis:
+    image: redis:latest
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - crs-network
+
+  codeindexer:
+    image: crs-multilang:latest
+    environment:
+      - TARBALL_DIR=/tarballs
+      - CODE_INDEXER_REDIS_URL=redis://redis:6379
+    volumes:
+      - /out/tarballs:/tarballs:ro
+    depends_on:
+      - redis
+    networks:
+      - crs-network
+    command: ["init_codeindexer"]
+
+  joern:
+    image: multilang-runner-joern:latest
+    volumes:
+      - /out/tarballs:/tarballs:ro
+    depends_on:
+      codeindexer:
+        condition: service_completed_successfully
+    networks:
+      - crs-network
+
+  lsp:
+    image: ${CRS_TARGET:-crs-multilang}_crs-multilang_lsp-runner:latest
+    environment:
+      - TARBALL_DIR=/tarballs
+    volumes:
+      - /out/tarballs:/tarballs:ro
+    depends_on:
+      codeindexer:
+        condition: service_completed_successfully
+    networks:
+      - crs-network
+
+  crs:
+    image: crs-multilang:latest
+    privileged: true
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TARBALL_DIR=/tarballs
+      - CRS_CONFIG=/crs.config
+      - LITELLM_URL=${LITELLM_URL:-}
+      - LITELLM_KEY=${LITELLM_KEY:-}
+      - CPUSET_CPUS=${CPUSET_CPUS:-0-7}
+      - FUZZING_ENGINE=${FUZZING_ENGINE:-libfuzzer}
+      - SANITIZER=${SANITIZER:-address}
+      - RUN_FUZZER_MODE=${RUN_FUZZER_MODE:-interactive}
+      - HELPER=True
+      - CRS_INTERACTIVE=True
+      - CRS_TARGET=${CRS_TARGET:-}
+      - SEED_SHARE_DIR=/seed_share_dir
+      - CRS_NAME=${CRS_NAME:-crs-multilang}
+      - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
+      - DICTGEN_REDIS_URL=redis://redis:6379
+      - CODE_INDEXER_REDIS_URL=redis://redis:6379
+      - JOERN_URL=http://joern:9909
+      - LSP_URL=http://lsp:8080
+    volumes:
+      - /out/tarballs:/tarballs:ro
+      - /out:/out
+      - /tmp/crs.config:/crs.config:ro
+    depends_on:
+      codeindexer:
+        condition: service_completed_successfully
+      joern:
+        condition: service_started
+      lsp:
+        condition: service_started
+    networks:
+      - crs-network
+    command: ["run_crs"]
+
+networks:
+  crs-network:
+    driver: bridge

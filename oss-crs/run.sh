@@ -33,6 +33,7 @@ echo "Environment:"
 echo "  CPUSET_CPUS: ${CPUSET_CPUS:-not set}"
 echo "  MEMORY_LIMIT: ${MEMORY_LIMIT:-not set}"
 echo "  RUN_FUZZER_MODE: ${RUN_FUZZER_MODE:-not set}"
+echo "  CRS_INPUT_GENS: ${CRS_INPUT_GENS:-given_fuzzer}"
 
 # Verify Docker socket is available (using host docker daemon)
 if ! docker info > /dev/null 2>&1; then
@@ -110,12 +111,21 @@ fi
 
 # Generate harness-specific crs.config to avoid conflicts with concurrent runs
 HOST_CRS_CONFIG="${HOST_OUT_DIR}/crs.config.${SAFE_HARNESS}"
+
+# Convert CRS_INPUT_GENS from comma-separated to JSON array
+# Default: given_fuzzer
+# Options: given_fuzzer, concolic_input_gen, testlang_input_gen, dict_input_gen, mlla
+INPUT_GENS="${CRS_INPUT_GENS:-given_fuzzer}"
+# Convert "a,b,c" to ["a", "b", "c"]
+INPUT_GENS_JSON=$(echo "$INPUT_GENS" | sed 's/,/", "/g' | sed 's/^/["/' | sed 's/$/"]/')
+echo "Input generators: $INPUT_GENS_JSON"
+
 cat > "/out/crs.config.${SAFE_HARNESS}" << EOF
 {
     "target_harnesses": ["${HARNESS_NAME}"],
     "modules": ["uniafl"],
     "others": {
-        "input_gens": ["given_fuzzer"]
+        "input_gens": ${INPUT_GENS_JSON}
     }
 }
 EOF
@@ -124,14 +134,28 @@ export HOST_CRS_CONFIG
 echo "Generated crs.config at $HOST_CRS_CONFIG:"
 cat "/out/crs.config.${SAFE_HARNESS}"
 
-# Start all services with docker compose
+# Start services with docker compose
 # COMPOSE_PROJECT_NAME is set at the top of the script for cleanup trap
 echo "Starting services with docker compose (project: $COMPOSE_PROJECT_NAME)..."
 cd /app
 
-# Run and capture exit code
+# Check if other services are needed (mlla or testlang_input_gen)
+# These require: redis, joern, codeindexer, lsp (profile: others)
+NEEDS_OTHER_SERVICES=false
+if echo "$INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
+    NEEDS_OTHER_SERVICES=true
+fi
+
+# Run services
+# --exit-code-from crs: return crs container's exit code when it finishes
 set +e
-docker compose up --abort-on-container-exit --exit-code-from crs
+if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
+    echo "Other services enabled (mlla or testlang detected)"
+    docker compose --profile others up --exit-code-from crs
+else
+    echo "Other services disabled (only fuzzing modules)"
+    docker compose up --exit-code-from crs
+fi
 EXIT_CODE=$?
 set -e
 

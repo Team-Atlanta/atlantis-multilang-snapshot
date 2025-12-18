@@ -6,12 +6,16 @@ services:
     container_name: redis_${SAFE_TARGET}_${SAFE_HARNESS}
     command: redis-server --appendonly yes
     restart: unless-stopped
+    cpuset: ${CPUSET_CPUS:-0-7}
+    profiles: ["others"]
     networks:
       - crs-internal
 
   joern:
     image: crs-multilang/multilang-runner-joern:latest
     container_name: joern_${SAFE_TARGET}_${SAFE_HARNESS}
+    cpuset: ${CPUSET_CPUS:-0-7}
+    profiles: ["others"]
     volumes:
       - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
     depends_on:
@@ -22,6 +26,8 @@ services:
   codeindexer:
     image: crs-multilang/crs-multilang:latest
     container_name: codeindexer_${SAFE_TARGET}_${SAFE_HARNESS}
+    cpuset: ${CPUSET_CPUS:-0-7}
+    profiles: ["others"]
     environment:
       - PYTHONUNBUFFERED=1
       - TARBALL_DIR=/tarballs
@@ -40,6 +46,8 @@ services:
     image: ${LSP_RUNNER:-crs-multilang/multilang-lsp-base:latest}
     container_name: lsp_${SAFE_TARGET}_${SAFE_HARNESS}
     restart: unless-stopped
+    cpuset: ${CPUSET_CPUS:-0-7}
+    profiles: ["others"]
     environment:
       - CRS_TARGET=${CRS_TARGET:-}
     volumes:
@@ -80,11 +88,8 @@ services:
       - ${HOST_ARTIFACT_DIR:-/out}:/artifacts
       - ${HOST_OUT_DIR:-/out}:/out
       - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
-    depends_on:
-      - redis
-      - joern
-      - codeindexer
-      - lsp
+    # Note: No depends_on - other services are optional (profile: others)
+    # When profile "others" is active, services start via their own depends_on chain
     networks:
       # Internal network for redis/joern communication (project-scoped, isolated)
       - crs-internal

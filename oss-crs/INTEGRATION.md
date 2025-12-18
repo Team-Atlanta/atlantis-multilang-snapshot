@@ -361,6 +361,63 @@ lsp:
 - `oss-crs/run.sh` - Read project name and set LSP_RUNNER env var
 - `oss-crs/docker-compose.yml` - Added `lsp` service, LSP_URL env var, dependency from `crs`
 
+### 9. Configurable Input Generators
+
+**Problem:** The input generators were hardcoded to `["given_fuzzer"]` in crs.config, preventing users from enabling additional fuzzing techniques.
+
+**Solution:** Added `CRS_INPUT_GENS` environment variable to configure input generators at runtime.
+
+**Available Options:**
+- `given_fuzzer` - Use provided seed corpus (default)
+- `concolic_input_gen` - Concolic execution for input generation
+- `testlang_input_gen` - Test language-based input generation
+- `dict_input_gen` - Dictionary-based input generation
+- `mlla` - Multi-language LLM agent for input generation
+
+**Usage:** Set `CRS_INPUT_GENS` as comma-separated list:
+```bash
+CRS_INPUT_GENS=given_fuzzer,mlla,dict_input_gen
+```
+
+**Implementation in `run.sh`:**
+```bash
+# Convert CRS_INPUT_GENS from comma-separated to JSON array
+INPUT_GENS="${CRS_INPUT_GENS:-given_fuzzer}"
+INPUT_GENS_JSON=$(echo "$INPUT_GENS" | sed 's/,/", "/g' | sed 's/^/["/' | sed 's/$/"]/')
+
+cat > "/out/crs.config.${SAFE_HARNESS}" << EOF
+{
+    "target_harnesses": ["${HARNESS_NAME}"],
+    "modules": ["uniafl"],
+    "others": {
+        "input_gens": ${INPUT_GENS_JSON}
+    }
+}
+EOF
+```
+
+**Files Modified:**
+- `oss-crs/run.sh` - Added `CRS_INPUT_GENS` parsing and crs.config generation
+
+### 10. CPU Constraints for All Services
+
+**Problem:** Only the main CRS container had CPU limits. Support services (redis, joern, codeindexer, lsp) could use CPUs outside the allocated set, potentially interfering with other workloads on the host.
+
+**Solution:** Added `cpuset` constraint to all docker-compose services:
+
+| Service | cpuset | mem_limit | Rationale |
+|---------|--------|-----------|-----------|
+| redis | `${CPUSET_CPUS}` | - | Shares allocated CPUs |
+| joern | `${CPUSET_CPUS}` | - | Shares allocated CPUs |
+| codeindexer | `${CPUSET_CPUS}` | - | Shares allocated CPUs |
+| lsp | `${CPUSET_CPUS}` | - | Shares allocated CPUs |
+| crs | `${CPUSET_CPUS}` | `${MEMORY_LIMIT}` | Main fuzzing workload |
+
+All services share the same CPU set, ensuring they don't interfere with other workloads outside the allocated CPUs. Memory limits are only applied to the main CRS container.
+
+**Files Modified:**
+- `oss-crs/docker-compose.yml` - Added `cpuset` to all services
+
 ---
 
 ## Bugs Fixed
@@ -411,6 +468,7 @@ lsp:
 | `HOST_OUT_SUBDIR` | Subdirectory for build type separation |
 | `CRS_SKIP_SAVE` | Skip saving results to `/artifacts` |
 | `CRS_EXTERNAL_NETWORK` | External network name for LiteLLM |
+| `CRS_INPUT_GENS` | Comma-separated input generators (default: `given_fuzzer`) |
 
 ### Docker Compose Changes
 

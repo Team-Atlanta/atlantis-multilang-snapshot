@@ -5,12 +5,12 @@ get_cp
 main.py
 EXIT_CODE=$?
 
-# Save results to /artifact/ unless CRS_SKIP_SAVE=True
-if [ "$CRS_SKIP_SAVE" != "True" ] && [ -d "/artifact" ]; then
-    echo "=== Saving CRS results to /artifact/ ==="
+# Save results to /artifacts/ unless CRS_SKIP_SAVE=True
+if [ "$CRS_SKIP_SAVE" != "True" ] && [ -d "/artifacts" ]; then
+    echo "=== Saving CRS results to /artifacts/ ==="
 
     # Create output directories
-    mkdir -p /artifact/povs /artifact/corpus /artifact/workdir_result
+    mkdir -p /artifacts/povs /artifacts/corpus /artifacts/workdir_result
 
     # Find and copy results from each harness workdir
     for harness_dir in /crs-workdir/worker-*/HarnessRunner/*/; do
@@ -20,24 +20,24 @@ if [ "$CRS_SKIP_SAVE" != "True" ] && [ -d "/artifact" ]; then
 
             # Copy POVs
             if [ -d "$harness_dir/pov" ] && [ "$(ls -A "$harness_dir/pov" 2>/dev/null)" ]; then
-                mkdir -p /artifact/povs/$harness
-                cp -r "$harness_dir/pov/"* /artifact/povs/$harness/ 2>/dev/null || true
+                mkdir -p /artifacts/povs/$harness
+                cp -r "$harness_dir/pov/"* /artifacts/povs/$harness/ 2>/dev/null || true
             fi
 
             # Copy corpus (from uniafl_corpus)
             if [ -d "$harness_dir/uniafl_corpus" ] && [ "$(ls -A "$harness_dir/uniafl_corpus" 2>/dev/null)" ]; then
-                mkdir -p /artifact/corpus/$harness
-                cp -r "$harness_dir/uniafl_corpus/"* /artifact/corpus/$harness/ 2>/dev/null || true
+                mkdir -p /artifacts/corpus/$harness
+                cp -r "$harness_dir/uniafl_corpus/"* /artifacts/corpus/$harness/ 2>/dev/null || true
             fi
 
             # Copy full workdir
-            mkdir -p /artifact/workdir_result/$harness
-            cp -r "$harness_dir"/* /artifact/workdir_result/$harness/ 2>/dev/null || true
+            mkdir -p /artifacts/workdir_result/$harness
+            cp -r "$harness_dir"/* /artifacts/workdir_result/$harness/ 2>/dev/null || true
         fi
     done
 
     echo "=== Results saved ==="
-    ls -la /artifact/
+    ls -la /artifacts/
 fi
 
 exit $EXIT_CODE

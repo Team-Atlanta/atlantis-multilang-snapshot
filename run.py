@@ -1003,7 +1003,7 @@ class Target:
         eval_sec = args.get("seconds", 0)
         if eval_sec != 0:
             cmd += ["-e", f"EVAL_SEC={eval_sec}"]
-            cmd += ["-v", f"{self.host_artifact_path}:/artifact"]
+            cmd += ["-v", f"{self.host_artifact_path}:/artifacts"]
         if args.get("copy_workdir"):
             cmd += ["-e", "SAVE_WORKDIR_RESULT=True"]
         if args.get("llm_test"):

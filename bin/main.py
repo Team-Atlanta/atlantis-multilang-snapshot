@@ -687,7 +687,7 @@ class AnyCRS(CRS):
         if os.environ.get("SAVE_WORKDIR_RESULT") != "True":
             return
 
-        workdir_result_dir = Path("/artifact/workdir_result")
+        workdir_result_dir = Path("/artifacts/workdir_result")
         await util.async_rm(workdir_result_dir)
         os.makedirs(workdir_result_dir, exist_ok=True)
 
@@ -703,7 +703,7 @@ class AnyCRS(CRS):
                 self.log(f"[Eval] No workdir found for {hrunner.harness.name}")
 
     async def save_eval_result(self, eval_time):
-        result_dir = Path("/artifact/eval_result")
+        result_dir = Path("/artifacts/eval_result")
         await util.async_rm(result_dir)
         self.log(f"[Eval] Save result into {result_dir}")
 

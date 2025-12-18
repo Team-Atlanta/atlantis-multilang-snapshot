@@ -43,7 +43,7 @@ services:
       - JOERN_URL=http://joern:9909
     volumes:
       - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
-      - ${HOST_ARTIFACT_DIR:-/out}:/artifact
+      - ${HOST_ARTIFACT_DIR:-/out}:/artifacts
       - ${HOST_OUT_DIR:-/out}:/out
       - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
     depends_on:

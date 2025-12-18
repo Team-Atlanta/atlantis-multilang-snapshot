@@ -472,7 +472,36 @@ fi
 - `oss-crs/run.sh` - Selects compose file based on `CRS_INPUT_GENS`
 - `runner.Dockerfile` - Copies both compose files to `/app/`
 
-### 12. Container Cleanup Sidecar
+### 12. Always Save Eval Result
+
+**Problem:** The `save_eval_result()` function generates valuable analysis data (seed creation times, coverage over time, crash reports, summary), but it only ran in eval mode (`EVAL_SEC > 0`). Non-eval runs didn't get this analysis data.
+
+**Solution:** Modified `bin/main.py` to always call `save_eval_result()` after `crs.run(True)` completes, unless:
+1. Already in eval mode (eval mode saves during `async_evaluate()`)
+2. `CRS_SKIP_SAVE=True` is set (allows oss-crs to skip when not needed)
+
+**Implementation:**
+```python
+start_time = int(time.time())
+crs.run(True)
+
+# Always save eval result after run completes (eval mode already saves during run)
+# Skip if CRS_SKIP_SAVE is set (used by oss-crs to avoid redundant saves)
+if not is_eval() and os.environ.get("CRS_SKIP_SAVE") != "True":
+    eval_time = int(time.time()) - start_time
+    asyncio.run(crs.save_eval_result(eval_time))
+```
+
+**Output:** Creates `/artifacts/eval_result/` with:
+- Seed creation times
+- Coverage over time data
+- Crash reports
+- Summary statistics
+
+**Files Modified:**
+- `bin/main.py` - Added `save_eval_result()` call after `crs.run(True)`
+
+### 13. Container Cleanup Sidecar
 
 **Problem:** When the runner container is stopped externally (e.g., by oss-crs timeout or `docker stop`), the containers spawned by docker-compose (redis, crs, joern, etc.) continue running as orphans on the host Docker daemon. This happens because:
 1. Runner uses host Docker socket, so spawned containers are siblings, not children
@@ -723,6 +752,7 @@ HOST_ARTIFACT_DIR/
 
 #### Runtime Fixes
 ```
+c36e062c7 feat(main): always save eval_result after run, respecting CRS_SKIP_SAVE
 b842af94e fix: use sched_getaffinity for CPU count to respect cpuset limits
 b5e7cbed1 fix: handle signals properly for result saving on interrupt
 83a249a4a fix: add timeout and SIGKILL fallback in signal handler to prevent blocking
@@ -761,6 +791,7 @@ b577ee649 fix(oss-crs): add network isolation and fix Redis URL parsing
 
 #### Service Orchestration
 ```
+2a279d473 refactor(oss-crs): split docker-compose into fuzzing-only and mlla modes
 37d1940ae fix(oss-crs): add redis dependency to crs service
 85a1fba4c feat(oss-crs): add cleanup sidecar and fix redis profile
 fe36119ba feat(oss-crs): add configurable input generators and optional service profiles

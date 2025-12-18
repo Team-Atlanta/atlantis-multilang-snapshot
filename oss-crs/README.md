@@ -46,10 +46,12 @@ docker run --rm \
 
 ```
 oss-crs/
-├── README.md           # This file
-├── build.sh            # Build phase script (uses host docker socket)
-├── run.sh              # Run phase script (uses host docker socket)
-└── docker-compose.yml  # Service orchestration for runtime
+├── README.md              # This file
+├── INTEGRATION.md         # Detailed integration notes and bug fixes
+├── build.sh               # Build phase script (uses host docker socket)
+├── run.sh                 # Run phase script (uses host docker socket)
+├── docker-compose.yml     # Fuzzing-only mode (redis, crs, cleanup)
+└── docker-compose.mlla.yml # MLLA mode (redis, codeindexer, joern, lsp, crs, cleanup)
 ```
 
 ## How It Works
@@ -68,10 +70,10 @@ oss-crs/
 1. Verifies host Docker socket is available
 2. Verifies required images exist on host daemon
 3. Generates crs.config with harness name
-4. Starts services via `docker compose`:
-   - Redis (state storage)
-   - Joern (code analysis)
-   - CRS (main fuzzing engine)
+4. Selects compose file based on `CRS_INPUT_GENS`:
+   - **Fuzzing-only** (`docker-compose.yml`): redis, crs, cleanup
+   - **MLLA mode** (`docker-compose.mlla.yml`): redis, codeindexer, joern, lsp, crs, cleanup
+5. Starts services via `docker compose`
 
 ## Environment Variables
 
@@ -88,6 +90,7 @@ oss-crs/
 | `CRS_TARGET` | (optional) | Target project name |
 | `CRS_NAME` | `crs-multilang` | CRS instance name |
 | `CRS_SKIP_SAVE` | (empty) | Set to `True` to skip saving results |
+| `CRS_INPUT_GENS` | `given_fuzzer` | Comma-separated input generators (e.g., `given_fuzzer,mlla`) |
 
 ## Required Images
 

@@ -35,10 +35,7 @@ services:
       - SEED_SHARE_DIR=/seed_share_dir
       - CRS_NAME=${CRS_NAME:-crs-multilang}
       - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
-      - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379
-      - JOERN_URL=http://joern:9909
-      - LSP_SERVER_URL=http://lsp:3303
     volumes:
       - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
       - ${HOST_ARTIFACT_DIR:-/out}:/artifacts

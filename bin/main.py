@@ -972,4 +972,11 @@ if __name__ == "__main__":
         register_submit_db_watchdog(crs)
     # if os.environ.get("RUN_MLLA", False):
     #     exit(0)
+    start_time = int(time.time())
     crs.run(True)
+
+    # Always save eval result after run completes (eval mode already saves during run)
+    # Skip if CRS_SKIP_SAVE is set (used by oss-crs to avoid redundant saves)
+    if not is_eval() and os.environ.get("CRS_SKIP_SAVE") != "True":
+        eval_time = int(time.time()) - start_time
+        asyncio.run(crs.save_eval_result(eval_time))

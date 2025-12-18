@@ -36,6 +36,9 @@ if [ -f /out/images/lsp-runner.tar.gz ]; then
     docker load -i /out/images/lsp-runner.tar.gz
 fi
 
+# Create artifacts directory for results (separate from build outputs)
+mkdir -p /out/artifacts
+
 # Determine compose file based on CRS_INPUT_GENS
 CRS_INPUT_GENS="${CRS_INPUT_GENS:-given_fuzzer}"
 if echo "$CRS_INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then

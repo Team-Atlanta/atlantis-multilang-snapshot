@@ -36,6 +36,7 @@ services:
       - SANITIZER=${SANITIZER:-address}
       - CRS_TARGET=${CRS_TARGET:-}
       - CRS_NAME=${CRS_NAME:-crs-multilang}
+      - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
       # Use service names - they resolve on crs-internal network (project-scoped)
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379

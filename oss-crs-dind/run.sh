@@ -30,6 +30,12 @@ docker load -i /out/images/crs-multilang.tar.gz
 docker load -i /out/images/joern.tar.gz
 docker load -i /out/images/redis.tar.gz
 
+# Load LSP runner image if available (for MLLA mode)
+if [ -f /out/images/lsp-runner.tar.gz ]; then
+    echo "Loading LSP runner image..."
+    docker load -i /out/images/lsp-runner.tar.gz
+fi
+
 # Determine compose file based on CRS_INPUT_GENS
 CRS_INPUT_GENS="${CRS_INPUT_GENS:-given_fuzzer}"
 if echo "$CRS_INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
@@ -65,7 +71,9 @@ export CPUSET_CPUS="${CPUSET_CPUS:-0-7}"
 export MEMORY_LIMIT="${MEMORY_LIMIT:-16G}"
 export LITELLM_URL="${LITELLM_URL:-}"
 export LITELLM_KEY="${LITELLM_KEY:-}"
-export CRS_TARGET="${CRS_TARGET:-}"
+# Sanitize CRS_TARGET for Docker image naming (replace / with _)
+CRS_TARGET_RAW="${CRS_TARGET:-}"
+export CRS_TARGET=$(echo "$CRS_TARGET_RAW" | tr '/' '_')
 export CRS_NAME="${CRS_NAME:-crs-multilang}"
 export CRS_SKIP_SAVE="${CRS_SKIP_SAVE:-}"
 export CRS_INPUT_GENS="$CRS_INPUT_GENS"

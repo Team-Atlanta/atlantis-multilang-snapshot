@@ -50,6 +50,20 @@ docker run --rm -v "$TARBALL_DIR:/tarballs" "$PARENT_IMAGE" \
 echo "Creating project.tar.gz from libs/oss-fuzz/projects/$PROJECT_NAME/..."
 cd /crs-multilang/libs/oss-fuzz/projects && tar -cvzf "$TARBALL_DIR/project.tar.gz" "$PROJECT_NAME" && cd /crs-multilang
 
+# Copy aixcc config if it exists (required by init_codeindexer for MLLA mode)
+AIXCC_CONFIG="/crs-multilang/libs/oss-fuzz/projects/$PROJECT_NAME/.aixcc/config.yaml"
+if [ -f "$AIXCC_CONFIG" ]; then
+    echo "Copying aixcc config from project..."
+    cp "$AIXCC_CONFIG" "$TARBALL_DIR/aixcc_conf.yaml"
+else
+    echo "WARNING: No .aixcc/config.yaml found in project. Creating minimal default..."
+    cat > "$TARBALL_DIR/aixcc_conf.yaml" << AIXCC_EOF
+cp_name: "${PROJECT_NAME}"
+full_mode:
+  base_commit: ""
+AIXCC_EOF
+fi
+
 # Step 4: Build fuzzers using run.py build
 echo ""
 echo "[4/6] Building fuzzers via run.py build..."
@@ -77,6 +91,16 @@ mkdir -p /out/images
 cp "$CRS_CACHE_DIR/crs-multilang.tar.gz" /out/images/crs-multilang.tar.gz
 cp "$CRS_CACHE_DIR/multilang-runner-joern.tar.gz" /out/images/joern.tar.gz
 cp "$CRS_CACHE_DIR/redis.tar.gz" /out/images/redis.tar.gz
+
+# Export LSP runner image if it was built (for MLLA mode)
+SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_')
+LSP_RUNNER_IMAGE="multilang-lsp-$SAFE_PROJECT"
+if docker image inspect "$LSP_RUNNER_IMAGE" > /dev/null 2>&1; then
+    echo "Exporting LSP runner image: $LSP_RUNNER_IMAGE"
+    docker save "$LSP_RUNNER_IMAGE" | gzip > "/out/images/lsp-runner.tar.gz"
+else
+    echo "Note: LSP runner image not found (MLLA mode will not be available)"
+fi
 
 echo ""
 echo "=== Build complete ==="

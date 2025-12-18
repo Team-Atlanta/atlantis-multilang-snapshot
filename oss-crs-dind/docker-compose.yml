@@ -35,6 +35,7 @@ services:
     volumes:
       - /out/tarballs:/tarballs:ro
       - /out:/out
+      - /out:/artifacts
       - /tmp/crs.config:/crs.config:ro
     depends_on:
       - redis

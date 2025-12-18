@@ -1,7 +1,7 @@
 version: '3.8'
 
-# Fuzzing-only mode: redis + crs
-# Use this when CRS_INPUT_GENS does not include mlla or testlang_input_gen
+# MLLA/Testlang mode: redis -> codeindexer, joern, lsp -> crs
+# Use this when CRS_INPUT_GENS includes mlla or testlang_input_gen
 
 services:
   redis:
@@ -12,6 +12,53 @@ services:
     cpuset: ${CPUSET_CPUS:-0-7}
     networks:
       - crs-internal
+
+  codeindexer:
+    image: crs-multilang/crs-multilang:latest
+    container_name: codeindexer_${SAFE_TARGET}_${SAFE_HARNESS}
+    cpuset: ${CPUSET_CPUS:-0-7}
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TARBALL_DIR=/tarballs
+      - CODE_INDEXER_REDIS_URL=redis://redis:6379
+    volumes:
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - crs-internal
+    command: ["init_codeindexer"]
+    restart: "no"
+
+  joern:
+    image: crs-multilang/multilang-runner-joern:latest
+    container_name: joern_${SAFE_TARGET}_${SAFE_HARNESS}
+    cpuset: ${CPUSET_CPUS:-0-7}
+    volumes:
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - crs-internal
+
+  lsp:
+    image: ${LSP_RUNNER:-crs-multilang/multilang-lsp-base:latest}
+    container_name: lsp_${SAFE_TARGET}_${SAFE_HARNESS}
+    restart: unless-stopped
+    cpuset: ${CPUSET_CPUS:-0-7}
+    environment:
+      - CRS_TARGET=${CRS_TARGET:-}
+    volumes:
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+    depends_on:
+      redis:
+        condition: service_started
+    networks:
+      - crs-internal
+    ports:
+      - "3303"
 
   crs:
     image: crs-multilang/crs-multilang:latest
@@ -45,7 +92,11 @@ services:
       - ${HOST_OUT_DIR:-/out}:/out
       - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
     depends_on:
-      redis:
+      codeindexer:
+        condition: service_completed_successfully
+      joern:
+        condition: service_started
+      lsp:
         condition: service_started
     networks:
       - crs-internal

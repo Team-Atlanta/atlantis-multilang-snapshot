@@ -17,6 +17,7 @@ RUN apt-get update -y && apt-get install -y \
 WORKDIR /app
 COPY oss-crs/run.sh /app/run.sh
 COPY oss-crs/docker-compose.yml /app/docker-compose.yml
+COPY oss-crs/docker-compose.mlla.yml /app/docker-compose.mlla.yml
 RUN chmod +x /app/run.sh
 
 ENTRYPOINT ["/app/run.sh"]

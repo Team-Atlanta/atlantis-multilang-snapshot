@@ -418,20 +418,24 @@ All services share the same CPU set, ensuring they don't interfere with other wo
 **Files Modified:**
 - `oss-crs/docker-compose.yml` - Added `cpuset` to all services
 
-### 11. Conditional Service Startup with Profiles
+### 11. Separate Docker Compose Files for Different Modes
 
-**Problem:** Services like joern, codeindexer, and lsp are only needed when certain input generators (mlla, testlang_input_gen) are configured. Running them for basic fuzzing (given_fuzzer only) wastes resources.
+**Problem:** Services like joern, codeindexer, and lsp are only needed when certain input generators (mlla, testlang_input_gen) are configured. Additionally, `--exit-code-from` implies `--abort-on-container-exit`, which causes Docker Compose to abort when codeindexer (a one-shot service) exits after completing indexing.
 
-**Solution:** Used Docker Compose profiles to conditionally start services:
+**Solution:** Split into two separate docker-compose files:
 
-| Service | Profile | Always Runs | Rationale |
-|---------|---------|-------------|-----------|
-| redis | (none) | ✅ | CRS always needs Redis for dict_input_gen |
-| joern | `others` | ❌ | Only mlla/testlang need code analysis |
-| codeindexer | `others` | ❌ | Only mlla/testlang need code index |
-| lsp | `others` | ❌ | Only mlla/testlang need LSP |
-| crs | (none) | ✅ | Main fuzzing container |
-| cleanup | (none) | ✅ | Sidecar for container cleanup |
+| File | Mode | Services | Startup Strategy |
+|------|------|----------|------------------|
+| `docker-compose.yml` | Fuzzing-only | redis, crs, cleanup | `--exit-code-from crs` |
+| `docker-compose.mlla.yml` | MLLA/Testlang | redis, codeindexer, joern, lsp, crs, cleanup | `up -d` + `docker wait` |
+
+**Dependency Order in MLLA mode:**
+```
+redis → codeindexer (service_completed_successfully)
+      → joern (service_started)
+      → lsp (service_started)
+            → crs (waits for all above)
+```
 
 **Implementation in `run.sh`:**
 ```bash
@@ -441,17 +445,32 @@ if echo "$INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
     NEEDS_OTHER_SERVICES=true
 fi
 
-# Run services
+# Run services using appropriate compose file
 if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
-    docker compose --profile others up --exit-code-from crs
+    COMPOSE_FILE="docker-compose.mlla.yml"
+    # Use up -d + wait for mlla mode (has one-shot codeindexer service)
+    docker compose -f "$COMPOSE_FILE" up -d
+    docker wait "crs_${SAFE_TARGET}_${SAFE_HARNESS}"
+    EXIT_CODE=$?
 else
-    docker compose up --exit-code-from crs
+    COMPOSE_FILE="docker-compose.yml"
+    # Fuzzing-only mode has no one-shot services
+    docker compose -f "$COMPOSE_FILE" up --exit-code-from crs
+    EXIT_CODE=$?
 fi
 ```
 
+**Why two files instead of profiles:**
+- Profiles with `--exit-code-from` still abort when any container exits
+- Separate files allow different startup strategies per mode
+- Each file is self-contained and easy to read
+- `service_completed_successfully` ensures proper startup order in MLLA mode
+
 **Files Modified:**
-- `oss-crs/docker-compose.yml` - Added `profiles: ["others"]` to joern, codeindexer, lsp
-- `oss-crs/run.sh` - Added conditional profile activation based on `CRS_INPUT_GENS`
+- `oss-crs/docker-compose.yml` - Fuzzing-only mode (redis, crs, cleanup)
+- `oss-crs/docker-compose.mlla.yml` - MLLA mode with all services and proper dependencies
+- `oss-crs/run.sh` - Selects compose file based on `CRS_INPUT_GENS`
+- `runner.Dockerfile` - Copies both compose files to `/app/`
 
 ### 12. Container Cleanup Sidecar
 
@@ -552,8 +571,29 @@ cleanup:
 | `SEED_SHARE_DIR` | Directory for shared seeds between harnesses |
 | `LSP_SERVER_URL` | LSP server URL for code analysis |
 
-### Docker Compose Changes
+### Docker Compose Files
 
+**Fuzzing-only mode (`docker-compose.yml`):**
+```yaml
+services:
+  redis:        # Always runs
+  crs:          # depends_on redis (service_started)
+  cleanup:      # Sidecar for container cleanup
+```
+
+**MLLA mode (`docker-compose.mlla.yml`):**
+```yaml
+services:
+  redis:        # Always runs
+  codeindexer:  # depends_on redis, restart: "no" (one-shot)
+  joern:        # depends_on redis
+  lsp:          # depends_on redis
+  crs:          # depends_on codeindexer (service_completed_successfully),
+                #            joern (service_started), lsp (service_started)
+  cleanup:      # Sidecar for container cleanup
+```
+
+**Common configuration (both files):**
 ```yaml
 volumes:
   - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro   # Build artifacts
@@ -580,20 +620,17 @@ environment:
 networks:
   crs-internal:    # Project-scoped, isolated
   crs-external:    # Shared for LiteLLM
+```
 
-# Service dependencies
-crs:
-  depends_on:
-    - redis        # CRS always needs Redis
+### API Key Configuration
 
-# Conditional services (profile: others)
-joern, codeindexer, lsp:
-  profiles: ["others"]   # Only start when mlla/testlang enabled
+**Path:** `/keys/api_key` (oss-crs convention)
 
-# Cleanup sidecar
-cleanup:
-  image: docker:cli
-  # Monitors runner and stops all containers when runner exits
+```bash
+# Read LiteLLM key from /keys/api_key (oss-crs convention)
+if [ -f /keys/api_key ]; then
+    export LITELLM_KEY="$(cat /keys/api_key)"
+fi
 ```
 
 ---

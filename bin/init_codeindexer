@@ -19,3 +19,5 @@ cp $TARBALL_DIR/aixcc_conf.yaml /src/.aixcc/config.yaml
 export CP_PROJ_PATH=/src
 export CP_SRC_PATH=/src/repo
 cd /home/crs/blob-gen/multilang-llm-agent && python3 -m mlla.codeindexer.main --cp /src/ --redis $CODE_INDEXER_REDIS_URL
+
+echo "Code indexing complete."

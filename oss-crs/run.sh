@@ -20,8 +20,9 @@ export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}"
 cleanup() {
     echo "=== Signal received, stopping services... ==="
     cd /app 2>/dev/null || true
-    # Stop all services including those in 'others' profile
-    docker compose --profile others down --remove-orphans 2>/dev/null || true
+    # Try both compose files (one will be active)
+    docker compose -f docker-compose.mlla.yml down --remove-orphans 2>/dev/null || true
+    docker compose -f docker-compose.yml down --remove-orphans 2>/dev/null || true
     exit 130
 }
 
@@ -79,15 +80,14 @@ else
     echo "WARNING: CRS_TARGET not set, LSP service may not start"
     export LSP_RUNNER=""
 fi
-# Read LiteLLM key from /keys/api_key (oss-crs convention) or fall back to env var
-if [ -f /keys/api_key ]; then
-    export LITELLM_KEY="$(cat /keys/api_key)"
-else
-    export LITELLM_KEY="${LITELLM_KEY:-}"
-fi
 export CRS_TARGET="${CRS_TARGET:-}"
 export CRS_NAME="${CRS_NAME:-crs-multilang}"
 export CRS_SKIP_SAVE="${CRS_SKIP_SAVE:-}"
+
+# Use LITELLM_KEY env var if set, otherwise read from /keys/api_key (oss-crs convention)
+if [ -z "${LITELLM_KEY:-}" ] && [ -f /keys/api_key ]; then
+    export LITELLM_KEY="$(cat /keys/api_key)"
+fi
 
 # HOST_OUT_DIR is used for docker volume mounts when using host docker socket
 # If not set, defaults to /out (for DinD mode compatibility)
@@ -155,22 +155,32 @@ if echo "$INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
     NEEDS_OTHER_SERVICES=true
 fi
 
-# Run services
-# --exit-code-from crs: return crs container's exit code when it finishes
+# Run services using appropriate compose file
+# - docker-compose.yml: fuzzing-only mode (redis + crs)
+# - docker-compose.mlla.yml: mlla/testlang mode (redis -> codeindexer, joern, lsp -> crs)
 set +e
 if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
-    echo "Other services enabled (mlla or testlang detected)"
-    docker compose --profile others up --exit-code-from crs
+    echo "Using docker-compose.mlla.yml (mlla or testlang detected)"
+    COMPOSE_FILE="docker-compose.mlla.yml"
+    # Use up -d + wait for mlla mode (has one-shot codeindexer service)
+    # --exit-code-from implies --abort-on-container-exit which aborts when codeindexer exits
+    docker compose -f "$COMPOSE_FILE" up -d
+    CRS_CONTAINER="crs_${SAFE_TARGET}_${SAFE_HARNESS}"
+    echo "Waiting for crs container to complete..."
+    docker wait "$CRS_CONTAINER"
+    EXIT_CODE=$?
 else
-    echo "Other services disabled (only fuzzing modules)"
-    docker compose up --exit-code-from crs
+    echo "Using docker-compose.yml (fuzzing-only mode)"
+    COMPOSE_FILE="docker-compose.yml"
+    # Fuzzing-only mode has no one-shot services, --exit-code-from works fine
+    docker compose -f "$COMPOSE_FILE" up --exit-code-from crs
+    EXIT_CODE=$?
 fi
-EXIT_CODE=$?
 set -e
 
-# Cleanup containers (include profile to stop all services)
+# Cleanup containers
 echo "Cleaning up containers..."
-docker compose --profile others down --remove-orphans 2>/dev/null || true
+docker compose -f "$COMPOSE_FILE" down --remove-orphans 2>/dev/null || true
 
 echo "=== Run complete (exit code: $EXIT_CODE) ==="
 exit $EXIT_CODE

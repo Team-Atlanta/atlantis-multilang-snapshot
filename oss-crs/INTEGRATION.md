@@ -236,26 +236,99 @@ def get_available_cpus() -> int:
 
 **Problem:** When fuzzing was interrupted with Ctrl+C (SIGINT) or `docker stop` (SIGTERM), results were not saved because the cleanup code never ran.
 
-**Root Cause:** Two issues:
+**Root Cause:** Multiple issues:
 1. Bash trap handlers are deferred while waiting on foreground processes
 2. Docker sends signals to PID 1 only, not to child processes
+3. If main.py doesn't respond to SIGTERM, cleanup blocks indefinitely
+4. Docker-compose spawned containers keep running after runner exit
 
-**Solution:**
-1. Run `main.py` in background with `wait` (interruptible by signals)
-2. Add `init: true` to docker-compose.yml for proper signal handling
-3. Trap handler explicitly kills main.py and saves results
+**Solution (Multi-layer):**
+
+**Layer 1: CRS Container (`bin/run_crs`)**
+- Run `main.py` in background with `wait` (interruptible by signals)
+- Add `init: true` to docker-compose.yml for tini as PID 1
+- Trap handler with 5-second timeout and SIGKILL fallback
 
 ```bash
-trap cleanup INT TERM
+cleanup() {
+    if [ -n "$MAIN_PID" ] && kill -0 $MAIN_PID 2>/dev/null; then
+        kill -TERM $MAIN_PID 2>/dev/null
+        # Wait up to 5 seconds for graceful shutdown
+        for i in 1 2 3 4 5; do
+            if ! kill -0 $MAIN_PID 2>/dev/null; then break; fi
+            sleep 1
+        done
+        # Force kill if still running
+        if kill -0 $MAIN_PID 2>/dev/null; then
+            kill -KILL $MAIN_PID 2>/dev/null
+        fi
+        wait $MAIN_PID 2>/dev/null
+    fi
+    save_results
+    exit 130
+}
 
+trap cleanup INT TERM
 main.py &
 MAIN_PID=$!
 wait $MAIN_PID
 ```
 
+**Layer 2: Runner Container (`oss-crs/run.sh`)**
+- Trap signals to stop docker-compose services on interrupt
+- Set COMPOSE_PROJECT_NAME early so cleanup can use it
+
+```bash
+# Set project name early for cleanup function
+export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}"
+
+cleanup() {
+    echo "=== Signal received, stopping services... ==="
+    cd /app 2>/dev/null || true
+    docker compose down --remove-orphans 2>/dev/null || true
+    exit 130
+}
+
+trap cleanup INT TERM
+```
+
 **Files Modified:**
-- `bin/run_crs` - Refactored with background process and trap handler
+- `bin/run_crs` - Background process, trap handler with timeout/SIGKILL fallback
+- `oss-crs/run.sh` - Signal trap for docker-compose cleanup
 - `oss-crs/docker-compose.yml` - Added `init: true` for tini as PID 1
+
+### 7. Code Indexer Initialization
+
+**Problem:** Code indexer was not running in the oss-crs docker-compose setup. During standalone builds, it's initialized via `target.run({"init_codeindexer": True})` in run.py, but in the oss-crs setup, the crs container runs `run_crs` directly without initializing the code index.
+
+**Impact:** LLM agents that depend on the code index (for code search, understanding, etc.) would fail or have degraded functionality.
+
+**Solution:** Added `codeindexer` as a separate service in docker-compose.yml. This ensures:
+1. Tarballs (project.tar.gz, repo.tar.gz) are extracted to /src/
+2. Code index is built and stored in Redis
+3. CRS waits for codeindexer to complete before starting (via depends_on)
+4. Agents can query the code index during fuzzing
+
+```yaml
+codeindexer:
+  image: crs-multilang/crs-multilang:latest
+  container_name: codeindexer_${SAFE_TARGET}_${SAFE_HARNESS}
+  environment:
+    - PYTHONUNBUFFERED=1
+    - TARBALL_DIR=/tarballs
+    - CODE_INDEXER_REDIS_URL=redis://redis:6379
+  volumes:
+    - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+  depends_on:
+    - redis
+  networks:
+    - crs-internal
+  command: ["init_codeindexer"]
+  restart: "no"  # Exit after indexing complete
+```
+
+**Files Modified:**
+- `oss-crs/docker-compose.yml` - Added `codeindexer` service, added dependency from `crs`
 
 ---
 
@@ -413,6 +486,8 @@ HOST_ARTIFACT_DIR/
 ```
 b842af94e fix: use sched_getaffinity for CPU count to respect cpuset limits
 b5e7cbed1 fix: handle signals properly for result saving on interrupt
+83a249a4a fix: add timeout and SIGKILL fallback in signal handler to prevent blocking
+f942c9b2f fix: add signal trap in run.sh to stop docker-compose services on interrupt
 ```
 
 #### libCRS Integration
@@ -489,6 +564,7 @@ f68175c00 fix(Dockerfile): build Python 3.10 from source instead of ppa
 
 #### Documentation
 ```
+7ca9f7804 docs: expand commit summary with all commits grouped by feature
 04f7d1c51 docs: add CPU count and signal handling challenges to INTEGRATION.md
 362371b24 docs: add DinD migration journey and output format sections to INTEGRATION.md
 7cf381fa0 docs(oss-crs): add results output section and integration notes

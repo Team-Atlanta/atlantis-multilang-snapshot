@@ -19,6 +19,23 @@ services:
     networks:
       - crs-internal
 
+  codeindexer:
+    image: crs-multilang/crs-multilang:latest
+    container_name: codeindexer_${SAFE_TARGET}_${SAFE_HARNESS}
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TARBALL_DIR=/tarballs
+      - CODE_INDEXER_REDIS_URL=redis://redis:6379
+    volumes:
+      - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
+    depends_on:
+      - redis
+    networks:
+      - crs-internal
+    command: ["init_codeindexer"]
+    # Exit after indexing is complete (not a long-running service)
+    restart: "no"
+
   crs:
     image: crs-multilang/crs-multilang:latest
     container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
@@ -50,6 +67,7 @@ services:
     depends_on:
       - redis
       - joern
+      - codeindexer
     networks:
       # Internal network for redis/joern communication (project-scoped, isolated)
       - crs-internal

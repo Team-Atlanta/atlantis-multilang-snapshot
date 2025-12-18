@@ -45,11 +45,29 @@ save_results() {
 # Cleanup function for signal handling
 cleanup() {
     echo "=== Interrupted, saving results... ==="
+
     # Kill main.py if still running
-    if [ -n "$MAIN_PID" ]; then
+    if [ -n "$MAIN_PID" ] && kill -0 $MAIN_PID 2>/dev/null; then
+        echo "Sending SIGTERM to main.py (PID: $MAIN_PID)..."
         kill -TERM $MAIN_PID 2>/dev/null
+
+        # Wait up to 5 seconds for graceful shutdown
+        for i in 1 2 3 4 5; do
+            if ! kill -0 $MAIN_PID 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+
+        # Force kill if still running
+        if kill -0 $MAIN_PID 2>/dev/null; then
+            echo "main.py didn't exit, sending SIGKILL..."
+            kill -KILL $MAIN_PID 2>/dev/null
+        fi
+
         wait $MAIN_PID 2>/dev/null
     fi
+
     save_results
     exit 130
 }

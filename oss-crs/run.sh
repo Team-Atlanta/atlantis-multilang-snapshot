@@ -58,14 +58,15 @@ export CPUSET_CPUS="${CPUSET_CPUS:-0-7}"
 export MEMORY_LIMIT="${MEMORY_LIMIT:-16G}"
 export LITELLM_URL="${LITELLM_URL:-}"
 
-# Read project safe name from builder phase (for LSP runner image name)
-# /tarballs is mounted from HOST_ARTIFACT_DIR/tarballs by oss-crs
-if [ -f "/tarballs/project_safe_name" ]; then
-    PROJECT_SAFE_NAME=$(cat /tarballs/project_safe_name)
+# Derive LSP runner image name from CRS_TARGET (provided by oss-crs)
+# LSP runner image follows pattern: multilang-lsp-{project_name}
+if [ -n "${CRS_TARGET:-}" ]; then
+    # Sanitize project name same way as build.sh does (tr '/' '_')
+    PROJECT_SAFE_NAME=$(echo "$CRS_TARGET" | tr '/' '_')
     export LSP_RUNNER="crs-multilang/multilang-lsp-${PROJECT_SAFE_NAME}:latest"
     echo "LSP Runner image: $LSP_RUNNER"
 else
-    echo "WARNING: project_safe_name not found, LSP service may not start"
+    echo "WARNING: CRS_TARGET not set, LSP service may not start"
     export LSP_RUNNER=""
 fi
 # Read LiteLLM key from /keys/api_key (oss-crs convention) or fall back to env var

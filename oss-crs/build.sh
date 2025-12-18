@@ -56,10 +56,8 @@ docker tag multilang-c-archive crs-multilang/multilang-c-archive:latest
 docker tag multilang-jvm-archive crs-multilang/multilang-jvm-archive:latest
 docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
 
-# Save project-specific info for runner phase
-# LSP runner image name follows pattern: multilang-lsp-{project_name}
+# Sanitize project name for Docker image naming
 SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_')
-echo "$SAFE_PROJECT" > "$TARBALL_DIR/project_safe_name"
 
 # Step 4: Build fuzzers using run.py build
 echo "Building fuzzers via run.py build..."

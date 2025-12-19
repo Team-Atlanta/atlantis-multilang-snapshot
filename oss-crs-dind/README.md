@@ -47,6 +47,89 @@ Build Phase                              Run Phase
 2. Images already available from build phase (no loading needed)
 3. Run the fuzzer
 
+## Volume Mount Architecture
+
+Understanding how volumes are mounted is critical for DinD mode. The key insight is that **nested Docker uses container paths, not host paths**.
+
+### Mount Chain: Host → DinD → Nested Containers
+
+```
+HOST FILESYSTEM
+├── build/artifacts/crs-multilang-dind/<project>/
+│   ├── tarballs/           # Build artifacts (repo.tar.gz, project.tar.gz, etc.)
+│   └── docker-data/        # Docker daemon state
+├── build/out/crs-multilang-dind/<project>/
+│   └── (fuzzer outputs)
+└── build/work/crs-multilang-dind/<project>/
+    └── (working files)
+        │
+        │  oss-crs compose.yaml.j2 mounts these to DinD container
+        ▼
+DinD CONTAINER (outer)
+├── /artifacts/              ← mounted from host build/artifacts/.../
+│   ├── tarballs/
+│   └── docker-data/
+├── /out/                    ← mounted from host build/out/.../
+└── /work/                   ← mounted from host build/work/.../
+        │
+        │  oss-crs-dind/docker-compose.yml mounts to nested containers
+        ▼
+NESTED CRS CONTAINER (inner)
+├── /tarballs/               ← mounted from DinD's /artifacts/tarballs
+├── /out/                    ← mounted from DinD's /out
+└── /artifacts/              ← mounted from DinD's /artifacts
+```
+
+### Why Container Paths (Not Host Paths)?
+
+In DinD mode, the nested Docker daemon runs **inside** the outer container and shares its filesystem. This is different from `host_docker_builder` mode:
+
+| Mode | Docker Daemon Location | Path Type |
+|------|------------------------|-----------|
+| `host_docker_builder` | On HOST machine | Must use HOST paths (`/home/.../build/...`) |
+| `dind` | Inside DinD container | Must use container paths (`/artifacts`, `/out`) |
+
+**DinD mode**: The nested Docker daemon sees the DinD container's filesystem, so paths like `/artifacts/tarballs` are directly accessible.
+
+**host_docker_builder mode**: The Docker daemon is on the host, so it cannot see container overlay paths. It needs absolute host paths like `/home/user/oss-crs/build/artifacts/.../`.
+
+### Volume Configuration
+
+1. **oss-crs (compose.yaml.j2)** automatically mounts host paths to DinD container:
+   ```yaml
+   volumes:
+     - {{ build_dir }}/artifacts/{{ crs.name }}/{{ project }}:/artifacts
+     - {{ build_dir }}/out/{{ crs.name }}/{{ project }}:/out
+     - {{ build_dir }}/work/{{ crs.name }}/{{ project }}:/work
+   ```
+
+2. **config-crs.yaml** can specify additional volumes (like cache):
+   ```yaml
+   volumes:
+     - ${HOST_CACHE_DIR}:/cache/images:ro
+   ```
+
+3. **docker-compose.yml** (inside DinD) mounts from container paths:
+   ```yaml
+   volumes:
+     - /artifacts/tarballs:/tarballs:ro    # Container path, NOT ${HOST_*}
+     - /out:/out
+     - /artifacts:/artifacts
+   ```
+
+### Data Flow Example
+
+**Build Phase**:
+1. oss-crs copies source to WORKDIR (`/workspace`) of DinD builder
+2. `build.sh` creates `repo.tar.gz` from `/workspace`
+3. `build.sh` creates `project.tar.gz` from oss-fuzz project files
+4. `run.py build` builds fuzzers, outputs to `/out/`
+
+**Run Phase**:
+1. Nested CRS container mounts `/artifacts/tarballs` as `/tarballs`
+2. `get_cp` extracts tarballs to `/src/` and `/src/repo/`
+3. CRS runs fuzzing with source at `/src/`
+
 ## Quick Start
 
 ### 1. Build CRS Images (One-Time, ~60-90 minutes)
@@ -208,14 +291,17 @@ rm -rf build/artifacts/crs-multilang/<project>/docker-data
 
 ## Comparison with Other Modes
 
-| Aspect | Host Socket | DinD (data-root) |
-|--------|-------------|------------------|
-| Isolation | None | Full |
+| Aspect | Host Docker Socket | DinD (data-root) |
+|--------|-------------------|------------------|
+| Docker Daemon | On HOST | Inside container |
+| Path Type | HOST paths (`/home/.../build/...`) | Container paths (`/artifacts`, `/out`) |
+| Isolation | None (shares host Docker) | Full (own Docker daemon) |
 | Build → Run transition | N/A | Instant (data persisted) |
 | Host Docker | Required | Not used |
 | Cleanup | Manual | Automatic (stop container) |
 | Portability | Limited | High |
 | Per-project isolation | No | Yes |
+| `HOST_*` env vars | Required | Not used |
 | Best for | Quick testing | Production, isolation |
 
 ## Design Notes

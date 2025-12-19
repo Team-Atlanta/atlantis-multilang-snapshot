@@ -1,6 +1,19 @@
 #!/bin/bash
 set -eu
 
+# CRS-Multilang Run Phase (DinD Mode)
+#
+# This script runs inside the DinD runner container. Key architecture points:
+#
+# 1. The Docker daemon runs INSIDE this container (DinD = Docker-in-Docker)
+# 2. docker-compose.yml uses CONTAINER paths (/artifacts, /out), not HOST paths
+# 3. These paths are mounted from the host by oss-crs compose.yaml.j2
+# 4. No HOST_* environment variables are needed (unlike host_docker_builder mode)
+#
+# Volume mount chain:
+#   Host: build/artifacts/.../  →  DinD: /artifacts/  →  Nested CRS: /tarballs/, /artifacts/
+#   Host: build/out/.../        →  DinD: /out/        →  Nested CRS: /out/
+
 # Source config for image arrays
 source /crs-runner/config.sh
 
@@ -16,9 +29,12 @@ echo "  CRS_INPUT_GENS: ${CRS_INPUT_GENS:-given_fuzzer}"
 echo ""
 echo "Docker data-root: /artifacts/docker-data (persisted from build phase)"
 
-# Docker daemon is auto-started by cruizba/ubuntu-dind entrypoint
-# With data-root=/artifacts/docker-data, Docker sees images from build phase
+# Start Docker daemon (we use ENTRYPOINT so base image's startup is bypassed)
 echo ""
+echo "Starting Docker daemon..."
+/usr/local/bin/start-docker.sh &
+
+# Wait for Docker daemon to be ready
 echo "Waiting for Docker daemon..."
 while ! docker info > /dev/null 2>&1; do
     sleep 1
@@ -145,6 +161,16 @@ export CRS_TARGET=$(echo "$CRS_TARGET_RAW" | tr '/' '_')
 export CRS_NAME="${CRS_NAME:-crs-multilang}"
 export CRS_SKIP_SAVE="${CRS_SKIP_SAVE:-}"
 export CRS_INPUT_GENS="$CRS_INPUT_GENS"
+
+# Debug: verify artifacts are accessible
+echo ""
+echo "Verifying artifacts accessibility..."
+echo "Contents of /artifacts/:"
+ls -la /artifacts/ || echo "ERROR: /artifacts/ not accessible"
+echo ""
+echo "Contents of /artifacts/tarballs/:"
+ls -la /artifacts/tarballs/ || echo "ERROR: /artifacts/tarballs/ not accessible"
+echo ""
 
 # Start all services with docker-compose
 # No cleanup sidecar needed - when this container stops, nested Docker daemon dies

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -eu
 
+# Source config for image arrays
+source /app/config.sh
+
 HARNESS_NAME="$1"
 shift || true
 
@@ -10,30 +13,85 @@ echo "Environment:"
 echo "  CPUSET_CPUS: ${CPUSET_CPUS:-0-7}"
 echo "  MEMORY_LIMIT: ${MEMORY_LIMIT:-16G}"
 echo "  CRS_INPUT_GENS: ${CRS_INPUT_GENS:-given_fuzzer}"
-
-# Start Docker daemon (provided by cruizba/ubuntu-dind)
 echo ""
-echo "Starting Docker daemon..."
-start-docker.sh
+echo "Docker data-root: /artifacts/docker-data (persisted from build phase)"
 
-# Wait for Docker to be ready
+# Docker daemon is auto-started by cruizba/ubuntu-dind entrypoint
+# With data-root=/artifacts/docker-data, Docker sees images from build phase
+echo ""
 echo "Waiting for Docker daemon..."
 while ! docker info > /dev/null 2>&1; do
     sleep 1
 done
 echo "Docker daemon ready"
 
-# Load images from /artifacts/images/ (docker load auto-detects gzip)
+# Verify runtime images are available (should be persisted from build phase)
 echo ""
-echo "Loading images from /artifacts/images/..."
-docker load -i /artifacts/images/crs-multilang.tar.gz
-docker load -i /artifacts/images/joern.tar.gz
-docker load -i /artifacts/images/redis.tar.gz
+echo "Checking runtime images..."
 
-# Load LSP runner image if available (for MLLA mode)
-if [ -f /artifacts/images/lsp-runner.tar.gz ]; then
-    echo "Loading LSP runner image..."
-    docker load -i /artifacts/images/lsp-runner.tar.gz
+IMAGES_AVAILABLE=true
+for img in "${DOCKER_IMAGES_RUNTIME[@]}"; do
+    if ! docker image inspect "$img" > /dev/null 2>&1; then
+        IMAGES_AVAILABLE=false
+        break
+    fi
+done
+
+if [ "$IMAGES_AVAILABLE" = true ]; then
+    echo "  Images available from build phase (persisted in /artifacts/docker-data/)"
+    for img in "${DOCKER_IMAGES_RUNTIME[@]}"; do
+        echo "  ✓ $img"
+    done
+else
+    echo "  WARNING: Images not found in Docker data. Attempting to load from cache..."
+    # Fallback: try to load from shared cache if available
+    if [ -d "/cache/images" ]; then
+        echo "  Loading from /cache/images/..."
+        for img in "${DOCKER_IMAGES_RUNTIME[@]}"; do
+            filename="${img%%:*}.tar.gz"
+            tarball="/cache/images/$filename"
+            if [ -f "$tarball" ]; then
+                echo "  Loading $img..."
+                pigz -dc "$tarball" | docker load
+            else
+                echo "  ✗ $tarball not found"
+            fi
+        done
+    else
+        echo "  ERROR: No cache available at /cache/images/"
+        echo "  Ensure build phase completed successfully."
+        exit 1
+    fi
+fi
+
+# Check LSP runner image for MLLA mode
+LSP_IMAGE_NAME=$(get_lsp_image_name "${CRS_TARGET:-mock-c}")
+if docker image inspect "$LSP_IMAGE_NAME" > /dev/null 2>&1; then
+    echo "  ✓ $LSP_IMAGE_NAME (LSP runner for MLLA)"
+    LSP_AVAILABLE=true
+else
+    echo "  Note: $LSP_IMAGE_NAME not available (MLLA mode will not work)"
+    LSP_AVAILABLE=false
+fi
+
+# Final verification of all runtime images
+echo ""
+echo "Verifying runtime images..."
+MISSING=false
+for img in "${DOCKER_IMAGES_RUNTIME[@]}"; do
+    if docker image inspect "$img" > /dev/null 2>&1; then
+        echo "  ✓ $img"
+    else
+        echo "  ✗ $img (MISSING)"
+        MISSING=true
+    fi
+done
+
+if [ "$MISSING" = true ]; then
+    echo ""
+    echo "ERROR: Some runtime images are missing."
+    echo "Ensure build phase completed successfully."
+    exit 1
 fi
 
 # Determine compose file based on CRS_INPUT_GENS
@@ -44,9 +102,9 @@ if echo "$CRS_INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
         echo "ERROR: CRS_TARGET must be set for MLLA mode"
         exit 1
     fi
-    if [ ! -f /artifacts/images/lsp-runner.tar.gz ]; then
-        echo "ERROR: LSP runner image not found at /artifacts/images/lsp-runner.tar.gz"
-        echo "MLLA mode requires LSP runner. Ensure build phase created it."
+    if [ "$LSP_AVAILABLE" != true ]; then
+        echo "ERROR: LSP runner image not available for MLLA mode."
+        echo "Ensure build phase created the LSP runner image."
         exit 1
     fi
     COMPOSE_FILE="/app/docker-compose.mlla.yml"
@@ -91,9 +149,9 @@ export CRS_INPUT_GENS="$CRS_INPUT_GENS"
 # Start all services with docker-compose
 # No cleanup sidecar needed - when this container stops, nested Docker daemon dies
 echo ""
-echo "Starting services with docker-compose..."
+echo "Starting services with docker compose..."
 cd /app
-docker-compose -f "$COMPOSE_FILE" up --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" up --abort-on-container-exit
 
 echo ""
 echo "=== Run complete ==="

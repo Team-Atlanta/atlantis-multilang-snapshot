@@ -1,38 +1,60 @@
 #!/bin/bash
 set -eu
 
+# Source config first for image arrays
+source /crs-multilang/oss-crs-dind/config.sh
+
 echo "=== CRS-Multilang Build Phase (DinD) ==="
 echo "Using parent image: $PARENT_IMAGE"
 echo "Project name: $PROJECT_NAME"
+echo ""
+echo "Docker data-root: /artifacts/docker-data (persisted to host)"
 
-# Start Docker daemon (provided by cruizba/ubuntu-dind)
-echo "Starting Docker daemon..."
-start-docker.sh
-
-# Wait for Docker to be ready
+# Docker daemon is auto-started by cruizba/ubuntu-dind entrypoint
+# With data-root=/artifacts/docker-data, Docker state persists to host
+echo ""
 echo "Waiting for Docker daemon..."
 while ! docker info > /dev/null 2>&1; do
     sleep 1
 done
 echo "Docker daemon ready"
 
+# Create docker-data directory (Docker daemon may have already created it)
+mkdir -p /artifacts/docker-data
+
 cd /crs-multilang
 
-# Step 1: Load pre-built CRS docker images from cache (instead of rebuilding)
+# Step 1: Load CRS docker images from shared cache
 echo ""
-echo "[1/6] Loading cached CRS images..."
-source /crs-multilang/oss-crs-dind/config.sh
-/crs-multilang/oss-crs-dind/verify-cache.sh
-/crs-multilang/oss-crs-dind/load-cache.sh all
+echo "[1/5] Loading CRS images..."
+
+# Check if images are already available (from previous build or volume mode)
+IMAGES_AVAILABLE=true
+for img in "${DOCKER_IMAGES_BUILDER[@]}"; do
+    if ! docker image inspect "$img" > /dev/null 2>&1; then
+        IMAGES_AVAILABLE=false
+        break
+    fi
+done
+
+if [ "$IMAGES_AVAILABLE" = true ]; then
+    echo "  Images already available (persisted from previous build or volume mode)"
+    for img in "${DOCKER_IMAGES_BUILDER[@]}"; do
+        echo "  ✓ $img"
+    done
+else
+    echo "  Loading from tarballs (/cache/images/)..."
+    /crs-multilang/oss-crs-dind/load-cache.sh all
+fi
 
 # Step 2: Load the project image from tarball (provided by oss-crs)
 echo ""
-echo "[2/6] Loading project image from /project-image.tar..."
+echo "[2/5] Loading project image from /project-image.tar..."
 docker load -i /project-image.tar
 
 # Step 3: Prepare tarballs for run.py build
 echo ""
-echo "[3/6] Preparing tarballs..."
+echo "[3/5] Preparing tarballs..."
 TARBALL_DIR=/artifacts/tarballs
 mkdir -p "$TARBALL_DIR"
 
@@ -66,7 +88,7 @@ fi
 
 # Step 4: Build fuzzers using run.py build
 echo ""
-echo "[4/6] Building fuzzers via run.py build..."
+echo "[4/5] Building fuzzers via run.py build..."
 python3 run.py build \
     --target "$PROJECT_NAME" \
     --tar-dir "$TARBALL_DIR" \
@@ -78,29 +100,15 @@ python3 run.py build \
 
 # Step 5: Create fuzzers tarball
 echo ""
-echo "[5/6] Creating fuzzers.tar.gz from /out..."
+echo "[5/5] Creating fuzzers.tar.gz from /out..."
 cd /out && tar -cvzf "$TARBALL_DIR/fuzzers.tar.gz" . && cd /crs-multilang
 
 # Mark build as done
 touch "$TARBALL_DIR/DONE"
 
-# Step 6: Copy runtime images for runner
-echo ""
-echo "[6/6] Copying runtime images for runner..."
-mkdir -p /artifacts/images
-cp "$CRS_CACHE_DIR/crs-multilang.tar.gz" /artifacts/images/crs-multilang.tar.gz
-cp "$CRS_CACHE_DIR/multilang-runner-joern.tar.gz" /artifacts/images/joern.tar.gz
-cp "$CRS_CACHE_DIR/redis.tar.gz" /artifacts/images/redis.tar.gz
-
-# Export LSP runner image if it was built (for MLLA mode)
-SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_')
-LSP_RUNNER_IMAGE="multilang-lsp-$SAFE_PROJECT"
-if docker image inspect "$LSP_RUNNER_IMAGE" > /dev/null 2>&1; then
-    echo "Exporting LSP runner image: $LSP_RUNNER_IMAGE"
-    docker save "$LSP_RUNNER_IMAGE" | gzip > "/artifacts/images/lsp-runner.tar.gz"
-else
-    echo "Note: LSP runner image not found (MLLA mode will not be available)"
-fi
+# Note: No need to export images as tarballs anymore
+# Docker data (including all images) persists in /artifacts/docker-data/
+# The run phase will use the same Docker data directly
 
 echo ""
 echo "=== Build complete ==="
@@ -110,5 +118,8 @@ echo ""
 echo "Tarballs in /artifacts/tarballs/:"
 ls -la /artifacts/tarballs/
 echo ""
-echo "Images in /artifacts/images/:"
-ls -la /artifacts/images/
+echo "Docker data persisted in /artifacts/docker-data/"
+echo "Size: $(du -sh /artifacts/docker-data 2>/dev/null | cut -f1 || echo 'calculating...')"
+echo ""
+echo "Available images for run phase:"
+docker images --format "  ✓ {{.Repository}}:{{.Tag}} ({{.Size}})"

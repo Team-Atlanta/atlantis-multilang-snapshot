@@ -33,11 +33,11 @@ COPY --from=project . /crs-multilang/libs/oss-fuzz/projects/${CRS_TARGET}/
 # Cache mounted at runtime via volumes: ${CRS_CACHE_DIR}:/cache/images:ro
 ENV CRS_CACHE_DIR=/cache/images
 
-# Set WORKDIR to /workspace (oss-crs will copy project source here)
+# Set WORKDIR to /workspace (oss-crs may copy data here)
 WORKDIR /workspace
 
-# Copy and setup build script
-COPY oss-crs-dind/build.sh /build.sh
-RUN chmod +x /build.sh
+# Use build script directly from /crs-multilang/oss-crs-dind/
+# (already copied via COPY . /crs-multilang)
+RUN chmod +x /crs-multilang/oss-crs-dind/build.sh
 
-CMD ["/build.sh"]
+CMD ["/crs-multilang/oss-crs-dind/build.sh"]

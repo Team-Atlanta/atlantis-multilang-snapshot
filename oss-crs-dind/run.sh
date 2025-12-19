@@ -2,7 +2,7 @@
 set -eu
 
 # Source config for image arrays
-source /app/config.sh
+source /crs-runner/config.sh
 
 HARNESS_NAME="$1"
 shift || true
@@ -107,10 +107,10 @@ if echo "$CRS_INPUT_GENS" | grep -qE "(mlla|testlang_input_gen)"; then
         echo "Ensure build phase created the LSP runner image."
         exit 1
     fi
-    COMPOSE_FILE="/app/docker-compose.mlla.yml"
+    COMPOSE_FILE="/crs-runner/docker-compose.mlla.yml"
     echo "Using MLLA mode (docker-compose.mlla.yml)"
 else
-    COMPOSE_FILE="/app/docker-compose.yml"
+    COMPOSE_FILE="/crs-runner/docker-compose.yml"
     echo "Using fuzzing-only mode (docker-compose.yml)"
 fi
 
@@ -150,7 +150,7 @@ export CRS_INPUT_GENS="$CRS_INPUT_GENS"
 # No cleanup sidecar needed - when this container stops, nested Docker daemon dies
 echo ""
 echo "Starting services with docker compose..."
-cd /app
+cd /crs-runner
 docker compose -f "$COMPOSE_FILE" up --abort-on-container-exit
 
 echo ""

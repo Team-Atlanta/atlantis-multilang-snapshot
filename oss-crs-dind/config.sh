@@ -87,6 +87,44 @@ RUNTIME_IMAGES=(
 export RUNTIME_IMAGES
 
 # =============================================================================
+# Language-Specific Image Sets (for load-cache.sh)
+# =============================================================================
+
+# C/C++ builder images (skip JVM-specific)
+BASE_BUILDER_IMAGES_C=(
+    "multilang-clang.tar.gz"
+    "multilang-builder.tar.gz"
+)
+export BASE_BUILDER_IMAGES_C
+
+# C/C++ archive images
+ARCHIVE_IMAGES_C=(
+    "multilang-c-archive.tar.gz"
+)
+export ARCHIVE_IMAGES_C
+
+# JVM builder images (skip C-specific clang)
+BASE_BUILDER_IMAGES_JVM=(
+    "multilang-builder-jvm.tar.gz"
+)
+export BASE_BUILDER_IMAGES_JVM
+
+# JVM archive images
+ARCHIVE_IMAGES_JVM=(
+    "multilang-jvm-archive.tar.gz"
+)
+export ARCHIVE_IMAGES_JVM
+
+# Common CRS images (needed by all languages)
+CRS_IMAGES=(
+    "crs-multilang.tar.gz"
+    "multilang-lsp-base.tar.gz"
+    "multilang-runner-joern.tar.gz"
+    "redis.tar.gz"
+)
+export CRS_IMAGES
+
+# =============================================================================
 # Project-Specific Image Naming
 # =============================================================================
 

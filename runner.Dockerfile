@@ -18,13 +18,11 @@ RUN apt-get update -y && apt-get install -y \
 # Note: Docker Compose v2 is built into Docker (docker compose), no Python package needed
 RUN pip3 install --break-system-packages pyyaml
 
-WORKDIR /app
+# Copy run scripts to /crs-runner/
+COPY oss-crs-dind/ /crs-runner/
+RUN chmod +x /crs-runner/run.sh
 
-# Copy run scripts and compose files
-COPY oss-crs-dind/config.sh /app/config.sh
-COPY oss-crs-dind/run.sh /app/run.sh
-COPY oss-crs-dind/docker-compose.yml /app/docker-compose.yml
-COPY oss-crs-dind/docker-compose.mlla.yml /app/docker-compose.mlla.yml
-RUN chmod +x /app/run.sh
+# Set WORKDIR to /workspace (oss-crs may copy data here)
+WORKDIR /workspace
 
-ENTRYPOINT ["/app/run.sh"]
+ENTRYPOINT ["/crs-runner/run.sh"]

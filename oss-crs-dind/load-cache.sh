@@ -14,6 +14,13 @@ IMAGE_SET="${1:-all}"
 
 # Get language-specific images based on FUZZING_LANGUAGE env var
 get_language_images() {
+    # Check if language-specific arrays are defined (backward compatibility)
+    if [ -z "${BASE_BUILDER_IMAGES_C+x}" ]; then
+        # Arrays not defined, fall back to REQUIRED_IMAGES
+        echo "${REQUIRED_IMAGES[@]}"
+        return
+    fi
+
     case "$FUZZING_LANGUAGE" in
         c|c++|cpp)
             # C/C++ projects: skip builder-jvm and jvm-archive

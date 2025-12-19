@@ -35,3 +35,4 @@ blob-gen/multilang-llm-agent/ci.config
 
 # Pre-built Docker image cache (mounted at runtime via volumes)
 oss-crs/cache
+oss-crs-dind/cache

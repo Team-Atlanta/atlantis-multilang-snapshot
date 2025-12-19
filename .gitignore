@@ -15,3 +15,8 @@ target/
 
 # Pre-built Docker image cache
 oss-crs/cache/
+
+# DinD cache and editor/tool files
+oss-crs-dind/cache/
+tags
+uv.lock

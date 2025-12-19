@@ -61,17 +61,17 @@ This builds all CRS images in your host Docker.
 ### 2. Prepare Shared Cache
 
 ```bash
-./prepare-cache.sh --tarballs
+./prepare-cache.sh
 ```
 
-Creates `.tar.gz` files in `cache/images/` (~18GB). This is a shared cache used by all projects.
+Creates `.tar.gz` files in `/tmp/crs-multilang-dind-cache/` (~18GB). This is a shared cache used by all projects.
 
 ### 3. Configure oss-crs
 
 Set the cache directory in your `.env`:
 
 ```bash
-HOST_CACHE_DIR=/path/to/oss-crs-dind/cache/images
+HOST_CACHE_DIR=/tmp/crs-multilang-dind-cache
 ```
 
 ### 4. Verify Cache (Optional)
@@ -104,8 +104,8 @@ oss-crs-dind/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CRS_CACHE_DIR` | `/cache/images` | Path to tarball cache inside container |
-| `HOST_CACHE_DIR` | (required) | Host path to shared tarball cache |
+| `CRS_CACHE_DIR` | `/cache/images` (container) | Path to tarball cache inside DinD container |
+| `HOST_CACHE_DIR` | `/tmp/crs-multilang-dind-cache` | Host path mounted to /cache/images in container |
 
 ### Build Phase
 
@@ -197,7 +197,7 @@ If images are missing, the runner will attempt to load from `/cache/images/` as 
 
 ### Out of disk space
 
-- Shared cache: ~18GB in `cache/images/`
+- Shared cache: ~18GB in `/tmp/crs-multilang-dind-cache/`
 - Per-project Docker data: ~15-20GB in `artifacts/<project>/docker-data/`
 - Build output also needs space
 

@@ -3,7 +3,8 @@
 FROM cruizba/ubuntu-dind
 
 ENV TZ=US \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    CRS_CACHE_DIR=/cache/images
 
 # Configure Docker to use /artifacts/docker-data as data root
 # This reuses Docker state (images, layers) from the build phase

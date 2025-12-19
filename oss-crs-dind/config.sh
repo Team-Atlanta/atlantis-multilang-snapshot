@@ -8,10 +8,11 @@
 # Cache Configuration
 # =============================================================================
 
-# Cache directory for tarball images (used by prepare-cache.sh --tarballs)
-# Default: oss-crs-dind/cache/images/ relative to this script
+# Cache directory for tarball images
+# - On host (prepare-cache.sh): defaults to /tmp/crs-multilang-dind-cache
+# - In container: overridden by Dockerfile ENV to /cache/images
 if [ -z "${CRS_CACHE_DIR:-}" ]; then
-    CRS_CACHE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cache/images"
+    CRS_CACHE_DIR="/tmp/crs-multilang-dind-cache"
 fi
 export CRS_CACHE_DIR
 

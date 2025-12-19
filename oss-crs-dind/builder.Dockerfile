@@ -10,6 +10,12 @@ ENV PROJECT_NAME=${CRS_TARGET}
 ENV TZ=US \
     DEBIAN_FRONTEND=noninteractive
 
+# Configure Docker to use /artifacts/docker-data as data root
+# This persists Docker state (images, layers) to the per-project artifacts directory
+# Run phase can then use the same data without needing to load tarballs
+RUN mkdir -p /etc/docker && \
+    echo '{"data-root": "/artifacts/docker-data"}' > /etc/docker/daemon.json
+
 # Install Python and dependencies for run.py
 RUN apt-get update -y && apt-get install -y \
     git python3 python3-pip curl pigz rsync \

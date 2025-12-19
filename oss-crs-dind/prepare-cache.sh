@@ -1,23 +1,19 @@
 #!/bin/bash
-# Build CRS images for DinD usage with flexible caching strategies
+# Build CRS images for DinD usage and export as tarballs
 #
-# Two caching strategies are available:
-# 1. TARBALLS: Export images as .tar.gz files, loaded at container startup
-#    - Slower startup (~2-5 min to load images)
-#    - Portable, works anywhere with file access
-#    - No special volume setup needed
+# By default, this script:
+# 1. Builds all CRS images
+# 2. Exports them as .tar.gz files to cache/images/
 #
-# 2. VOLUME: Pre-populate a Docker volume with images
-#    - Fast startup (images already loaded)
-#    - Requires Docker volume support
-#    - One-time setup, reusable across runs
+# The tarballs are used by build.sh to load images into DinD containers.
+# Docker data persists to /artifacts/docker-data/ so tarballs only need
+# to be loaded once per project.
 #
 # Usage:
-#   ./prepare-cache.sh              # Build all CRS images (default)
-#   ./prepare-cache.sh --skip-build # Skip building, just verify images exist
-#   ./prepare-cache.sh --tarballs   # Export tar.gz files for tarball mode
-#   ./prepare-cache.sh --volume     # Create & populate Docker volume for volume mode
-#   ./prepare-cache.sh --all        # Prepare both tarballs and volume
+#   ./prepare-cache.sh              # Build images and export tarballs (default)
+#   ./prepare-cache.sh --skip-build # Skip building, just export tarballs
+#   ./prepare-cache.sh --only-build # Build only, don't export tarballs
+#   ./prepare-cache.sh --volume     # Also create Docker volume (optional)
 #
 set -eu
 
@@ -31,14 +27,18 @@ DIND_IMAGE="${DIND_IMAGE:-cruizba/ubuntu-dind:latest}"
 
 # Parse arguments
 SKIP_BUILD=false
-EXPORT_TARBALLS=false
+EXPORT_TARBALLS=true  # Default: export tarballs
 CREATE_VOLUME=false
 for arg in "$@"; do
     case $arg in
         --skip-build)
             SKIP_BUILD=true
             ;;
+        --only-build)
+            EXPORT_TARBALLS=false
+            ;;
         --tarballs)
+            # Explicit flag (for backward compatibility)
             EXPORT_TARBALLS=true
             ;;
         --volume)
@@ -52,32 +52,28 @@ for arg in "$@"; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --skip-build  Skip building, just verify images exist"
-            echo "  --tarballs    Export tar.gz files (for tarball loading mode)"
-            echo "  --volume      Create & populate Docker volume (for volume mode)"
-            echo "  --all         Prepare both tarballs and volume"
+            echo "  --skip-build  Skip building, just export tarballs"
+            echo "  --only-build  Build only, don't export tarballs"
+            echo "  --tarballs    Export tar.gz files (default, for backward compat)"
+            echo "  --volume      Also create Docker volume (optional)"
+            echo "  --all         Export tarballs and create volume"
             echo "  -h, --help    Show this help"
             echo ""
-            echo "Cache Modes:"
-            echo "  TARBALLS: Slower startup, portable, no volume needed"
-            echo "  VOLUME:   Fast startup, requires Docker volume"
+            echo "Default behavior: Build images and export tarballs to cache/images/"
             echo ""
             echo "Environment Variables:"
             echo "  CRS_CACHE_DIR     Directory for tarball cache (default: ./cache/images)"
             echo "  CRS_VOLUME_NAME   Docker volume name (default: crs-multilang-images)"
-            echo "  DIND_IMAGE        DinD image for volume population"
             exit 0
             ;;
     esac
 done
 
-# Use DOCKER_IMAGES_ALL and DOCKER_IMAGES_REQUIRED from config.sh
-
 echo "=============================================="
 echo "=== Preparing CRS Images for DinD ==="
 echo "=============================================="
 echo "Build:    $([ "$SKIP_BUILD" = true ] && echo "skip" || echo "yes")"
-echo "Tarballs: $([ "$EXPORT_TARBALLS" = true ] && echo "yes" || echo "no")"
+echo "Tarballs: $([ "$EXPORT_TARBALLS" = true ] && echo "yes → $CRS_CACHE_DIR" || echo "no")"
 echo "Volume:   $([ "$CREATE_VOLUME" = true ] && echo "yes ($CRS_VOLUME_NAME)" || echo "no")"
 echo "=============================================="
 echo ""
@@ -125,7 +121,7 @@ if [ "$MISSING" = true ]; then
 fi
 
 #
-# Step 3: Export tarballs (optional, for tarball mode)
+# Step 3: Export tarballs (default behavior)
 #
 if [ "$EXPORT_TARBALLS" = true ]; then
     echo ""
@@ -141,12 +137,12 @@ if [ "$EXPORT_TARBALLS" = true ]; then
     done
 
     echo ""
-    echo "Tarballs: $CRS_CACHE_DIR"
+    echo "Tarballs exported to: $CRS_CACHE_DIR"
     ls -lh "$CRS_CACHE_DIR"
 fi
 
 #
-# Step 4: Create and populate Docker volume (optional, for volume mode)
+# Step 4: Create and populate Docker volume (optional)
 #
 if [ "$CREATE_VOLUME" = true ]; then
     echo ""
@@ -224,28 +220,21 @@ fi
 #
 echo ""
 echo "=============================================="
-echo "=== Images ready! ==="
+echo "=== Done! ==="
 echo "=============================================="
 echo ""
-echo "All $FOUND CRS images are available in host Docker."
+echo "All $FOUND CRS images are available."
 echo ""
 
 if [ "$EXPORT_TARBALLS" = true ]; then
-    echo "TARBALL MODE:"
-    echo "  Cache: $CRS_CACHE_DIR"
-    echo "  Set CRS_DIND_MODE=tarball in .env"
+    echo "Tarballs exported to: $CRS_CACHE_DIR"
+    echo ""
+    echo "Configure oss-crs:"
+    echo "  HOST_CACHE_DIR=$CRS_CACHE_DIR"
     echo ""
 fi
 
 if [ "$CREATE_VOLUME" = true ]; then
-    echo "VOLUME MODE:"
-    echo "  Volume: $CRS_VOLUME_NAME"
-    echo "  Set CRS_DIND_MODE=volume in .env"
-    echo ""
-fi
-
-if [ "$EXPORT_TARBALLS" = false ] && [ "$CREATE_VOLUME" = false ]; then
-    echo "No cache mode specified."
-    echo "Use --tarballs or --volume to prepare cache."
+    echo "Docker volume created: $CRS_VOLUME_NAME"
     echo ""
 fi

@@ -1,12 +1,31 @@
 #!/bin/bash
 set -eu
 
+# CRS-Multilang Build Phase (DinD Mode)
+#
+# This script runs inside the DinD builder container. Key architecture points:
+#
+# 1. The Docker daemon runs INSIDE this container (DinD = Docker-in-Docker)
+# 2. Nested Docker commands use CONTAINER paths (/artifacts, /work, /out)
+# 3. These paths are mounted from the host by oss-crs compose.yaml.j2
+# 4. No HOST_* environment variables are needed (unlike host_docker_builder mode)
+#
+# Volume mount chain:
+#   Host: build/artifacts/.../  →  DinD: /artifacts/  →  Nested: /tarballs/
+#   Host: build/out/.../        →  DinD: /out/
+#   Host: build/work/.../       →  DinD: /work/
+
+# Capture source directory before any cd commands
+# oss-crs copies source to WORKDIR (/workspace) of the DinD builder
+SOURCE_DIR="$(pwd)"
+
 # Source config first for image arrays
 source /crs-multilang/oss-crs-dind/config.sh
 
 echo "=== CRS-Multilang Build Phase (DinD) ==="
 echo "Using parent image: $PARENT_IMAGE"
 echo "Project name: $PROJECT_NAME"
+echo "Source directory: $SOURCE_DIR"
 echo ""
 echo "Docker data-root: /artifacts/docker-data (persisted to host)"
 
@@ -58,19 +77,19 @@ echo "[3/5] Preparing tarballs..."
 TARBALL_DIR=/artifacts/tarballs
 mkdir -p "$TARBALL_DIR"
 
-# Extract source code from parent image's WORKDIR
-WORKDIR=$(docker inspect --format='{{.Config.WorkingDir}}' "$PARENT_IMAGE" 2>/dev/null || true)
-# Default to /src if WORKDIR is empty
-if [ -z "$WORKDIR" ]; then
-    WORKDIR="/src"
-fi
-echo "Extracting source from $PARENT_IMAGE:$WORKDIR to repo.tar.gz..."
-docker run --rm -v "$TARBALL_DIR:/tarballs" "$PARENT_IMAGE" \
-    sh -c "cd '$WORKDIR' && tar -cvzf /tarballs/repo.tar.gz ."
+# In DinD mode, nested Docker can access container paths directly
+# The nested Docker daemon runs inside this container and shares the filesystem
+# So we use /artifacts/tarballs not HOST paths
+
+# Extract source code from SOURCE_DIR (captured at script start)
+echo "Extracting source from $SOURCE_DIR to repo.tar.gz..."
+tar -cvzf "$TARBALL_DIR/repo.tar.gz" -C "$SOURCE_DIR" .
 
 # Create project.tar.gz from oss-fuzz project files
+# Use -C to create files at root level (project.yaml, not mock-c/project.yaml)
+# This matches what get_cp expects when extracting to /src/
 echo "Creating project.tar.gz from libs/oss-fuzz/projects/$PROJECT_NAME/..."
-cd /crs-multilang/libs/oss-fuzz/projects && tar -cvzf "$TARBALL_DIR/project.tar.gz" "$PROJECT_NAME" && cd /crs-multilang
+tar -cvzf "$TARBALL_DIR/project.tar.gz" -C "/crs-multilang/libs/oss-fuzz/projects/$PROJECT_NAME" .
 
 # Copy aixcc config if it exists (required by init_codeindexer for MLLA mode)
 AIXCC_CONFIG="/crs-multilang/libs/oss-fuzz/projects/$PROJECT_NAME/.aixcc/config.yaml"
@@ -89,6 +108,8 @@ fi
 # Step 4: Build fuzzers using run.py build
 echo ""
 echo "[4/5] Building fuzzers via run.py build..."
+# Disable buildx/buildkit - may have compatibility issues in nested DinD
+export DOCKER_BUILDKIT=0
 python3 run.py build \
     --target "$PROJECT_NAME" \
     --tar-dir "$TARBALL_DIR" \

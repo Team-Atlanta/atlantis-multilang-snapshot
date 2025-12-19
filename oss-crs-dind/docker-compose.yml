@@ -3,6 +3,11 @@ version: '3.8'
 # DinD Fuzzing-only mode: redis + crs
 # No cleanup sidecar needed - when outer container stops, all nested containers die
 # Use this when CRS_INPUT_GENS does not include mlla or testlang_input_gen
+#
+# IMPORTANT: Volume mounts use CONTAINER paths (e.g., /artifacts, /out), NOT host paths.
+# In DinD mode, the nested Docker daemon runs inside the outer container and shares
+# its filesystem, so container paths like /artifacts/tarballs are directly accessible.
+# This is different from host_docker_builder mode which requires HOST_* paths.
 
 services:
   redis:
@@ -32,10 +37,12 @@ services:
       - CRS_NAME=${CRS_NAME:-crs-multilang}
       - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
       - DICTGEN_REDIS_URL=redis://redis:6379
+    # Volume mounts use DinD container paths (not HOST_* paths)
+    # These paths exist in the outer DinD container's filesystem
     volumes:
-      - /artifacts/tarballs:/tarballs:ro
-      - /out:/out
-      - /artifacts:/artifacts
+      - /artifacts/tarballs:/tarballs:ro  # DinD's /artifacts/tarballs → nested /tarballs
+      - /out:/out                          # DinD's /out → nested /out
+      - /artifacts:/artifacts              # DinD's /artifacts → nested /artifacts
       - /tmp/crs.config:/crs.config:ro
     depends_on:
       - redis

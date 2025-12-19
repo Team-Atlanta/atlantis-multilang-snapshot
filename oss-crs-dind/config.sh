@@ -1,53 +1,106 @@
 #!/bin/bash
-# CRS Docker Cache Configuration for DinD
+# CRS Docker Image Configuration for DinD
 #
-# This file provides default configuration for the CRS image caching system.
-# Users can override settings via environment variables.
+# This file defines Docker image names and tarball filenames
+# used by build.sh, run.sh, and other scripts.
 
-# Cache directory - user configurable via environment
+# =============================================================================
+# Cache Configuration
+# =============================================================================
+
+# Cache directory for tarball images (used by prepare-cache.sh --tarballs)
 # Default: oss-crs-dind/cache/images/ relative to this script
 if [ -z "${CRS_CACHE_DIR:-}" ]; then
     CRS_CACHE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cache/images"
 fi
 export CRS_CACHE_DIR
 
-# Base builder images (built by multilang-all.sh)
-# Build order matters: multilang-clang -> multilang-builder -> multilang-builder-jvm
-BASE_BUILDER_IMAGES=(
+# Docker volume name for pre-populated images (used by prepare-cache.sh --volume)
+CRS_VOLUME_NAME="${CRS_VOLUME_NAME:-crs-multilang-images}"
+export CRS_VOLUME_NAME
+
+# =============================================================================
+# Docker Image Names (for docker image inspect, docker save/load, etc.)
+# =============================================================================
+
+# All CRS images (complete list)
+DOCKER_IMAGES_ALL=(
+    "crs-multilang:latest"
+    "multilang-runner-joern:latest"
+    "redis:latest"
+    "multilang-clang:latest"
+    "multilang-builder:latest"
+    "multilang-builder-jvm:latest"
+    "multilang-c-archive:latest"
+    "multilang-jvm-archive:latest"
+    "multilang-lsp-base:latest"
+)
+export DOCKER_IMAGES_ALL
+
+# Builder images required for build phase
+DOCKER_IMAGES_BUILDER=(
+    "multilang-clang:latest"
+    "multilang-builder:latest"
+    "multilang-builder-jvm:latest"
+    "multilang-c-archive:latest"
+    "multilang-jvm-archive:latest"
+    "crs-multilang:latest"
+    "multilang-lsp-base:latest"
+    "multilang-runner-joern:latest"
+    "redis:latest"
+)
+export DOCKER_IMAGES_BUILDER
+
+# Runtime images required for run phase
+DOCKER_IMAGES_RUNTIME=(
+    "crs-multilang:latest"
+    "multilang-runner-joern:latest"
+    "redis:latest"
+)
+export DOCKER_IMAGES_RUNTIME
+
+# =============================================================================
+# Tarball Filenames (for load-cache.sh, verify-cache.sh)
+# =============================================================================
+
+# All required tarballs
+REQUIRED_IMAGES=(
     "multilang-clang.tar.gz"
     "multilang-builder.tar.gz"
     "multilang-builder-jvm.tar.gz"
-)
-export BASE_BUILDER_IMAGES
-
-# Archive images (built by run.py build_crs, FROM base builder images)
-ARCHIVE_IMAGES=(
     "multilang-c-archive.tar.gz"
     "multilang-jvm-archive.tar.gz"
-)
-export ARCHIVE_IMAGES
-
-# CRS runtime images
-CRS_IMAGES=(
     "crs-multilang.tar.gz"
     "multilang-lsp-base.tar.gz"
     "multilang-runner-joern.tar.gz"
     "redis.tar.gz"
 )
-export CRS_IMAGES
-
-# All required images for build/run (complete list)
-REQUIRED_IMAGES=(
-    "${BASE_BUILDER_IMAGES[@]}"
-    "${ARCHIVE_IMAGES[@]}"
-    "${CRS_IMAGES[@]}"
-)
 export REQUIRED_IMAGES
 
-# Runtime images needed by runner (subset of above)
+# Runtime tarballs
 RUNTIME_IMAGES=(
     "crs-multilang.tar.gz"
     "multilang-runner-joern.tar.gz"
     "redis.tar.gz"
 )
 export RUNTIME_IMAGES
+
+# =============================================================================
+# Project-Specific Image Naming
+# =============================================================================
+
+# LSP runner image naming pattern
+# Usage: LSP_IMAGE=$(get_lsp_image_name "project-name")
+LSP_IMAGE_PREFIX="multilang-lsp-"
+LSP_IMAGE_TARBALL="lsp-runner.tar.gz"
+export LSP_IMAGE_PREFIX LSP_IMAGE_TARBALL
+
+# Function to get LSP runner image name for a project
+# Args: $1 = project name (will be sanitized)
+get_lsp_image_name() {
+    local project="$1"
+    # Sanitize project name (replace / with _)
+    local safe_project=$(echo "$project" | tr '/' '_')
+    echo "${LSP_IMAGE_PREFIX}${safe_project}:latest"
+}
+export -f get_lsp_image_name

@@ -172,12 +172,29 @@ echo "Contents of /artifacts/tarballs/:"
 ls -la /artifacts/tarballs/ || echo "ERROR: /artifacts/tarballs/ not accessible"
 echo ""
 
+# Signal handling for graceful shutdown
+# When outer DinD container receives SIGTERM/SIGINT, propagate to nested containers
+cleanup() {
+    echo ""
+    echo "=== Received shutdown signal, stopping gracefully ==="
+    cd /crs-runner
+    # Give CRS time to save results (30 second timeout)
+    docker compose -f "$COMPOSE_FILE" down --timeout 30 || true
+    echo "=== Cleanup complete ==="
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
 # Start all services with docker-compose
-# No cleanup sidecar needed - when this container stops, nested Docker daemon dies
 echo ""
 echo "Starting services with docker compose..."
 cd /crs-runner
-docker compose -f "$COMPOSE_FILE" up --abort-on-container-exit
+docker compose -f "$COMPOSE_FILE" up --abort-on-container-exit &
+COMPOSE_PID=$!
+
+# Wait for compose to finish (or be interrupted)
+wait $COMPOSE_PID
+EXIT_CODE=$?
 
 echo ""
-echo "=== Run complete ==="
+echo "=== Run complete (exit code: $EXIT_CODE) ==="

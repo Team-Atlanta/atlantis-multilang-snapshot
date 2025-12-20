@@ -20,6 +20,8 @@ services:
   crs:
     image: crs-multilang:latest
     privileged: true
+    # Allow 30 seconds for graceful shutdown (save results)
+    stop_grace_period: 30s
     environment:
       - PYTHONUNBUFFERED=1
       - TARBALL_DIR=/tarballs

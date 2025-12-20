@@ -61,6 +61,7 @@ services:
   crs:
     image: crs-multilang:latest
     privileged: true
+    stop_grace_period: 30s
     environment:
       - PYTHONUNBUFFERED=1
       - TARBALL_DIR=/tarballs

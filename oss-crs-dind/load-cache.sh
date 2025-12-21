@@ -89,15 +89,33 @@ find_image_file() {
     fi
 }
 
-# Verify all images exist first
+# Check if we have tarballs or need to pull from registry
+USE_REGISTRY=false
+MISSING_TARBALLS=()
 for img in "${IMAGES_TO_LOAD[@]}"; do
     img_path=$(find_image_file "$img")
     if [ -z "$img_path" ]; then
-        echo "ERROR: Image file not found: $img"
-        echo "Run verify-cache.sh first to check cache status."
-        exit 1
+        MISSING_TARBALLS+=("$img")
     fi
 done
+
+if [ ${#MISSING_TARBALLS[@]} -gt 0 ]; then
+    if [ -n "$CRS_REGISTRY" ]; then
+        echo "Some tarballs missing, will pull from registry: $CRS_REGISTRY"
+        USE_REGISTRY=true
+    else
+        echo "ERROR: Missing tarballs and CRS_REGISTRY not set:"
+        for img in "${MISSING_TARBALLS[@]}"; do
+            echo "  - $img"
+        done
+        echo ""
+        echo "Options:"
+        echo "  1. Run prepare-cache.sh to create tarballs"
+        echo "  2. Set CRS_REGISTRY to pull from container registry"
+        echo "     export CRS_REGISTRY=\"ghcr.io/team-atlanta/crs-multilang\""
+        exit 1
+    fi
+fi
 
 # Load images in parallel with controlled concurrency
 load_image() {
@@ -113,11 +131,30 @@ load_image() {
         img_path="$CRS_CACHE_DIR/${img_base}.tar.gz"
     fi
 
-    echo "[START] Loading $img_base..."
-    if docker load -i "$img_path" > /dev/null 2>&1; then
-        echo "[DONE]  Loaded $img_base"
+    if [ -n "$img_path" ]; then
+        # Load from tarball
+        echo "[START] Loading $img_base from tarball..."
+        if docker load -i "$img_path" > /dev/null 2>&1; then
+            echo "[DONE]  Loaded $img_base"
+        else
+            echo "[ERROR] Failed to load $img_base"
+            return 1
+        fi
+    elif [ -n "$CRS_REGISTRY" ]; then
+        # Pull from registry
+        local registry_img="$CRS_REGISTRY/${img_base}:latest"
+        local local_img="crs-multilang/${img_base}:latest"
+        echo "[START] Pulling $img_base from registry..."
+        if docker pull "$registry_img" > /dev/null 2>&1; then
+            # Tag as local image name for compatibility
+            docker tag "$registry_img" "$local_img" 2>/dev/null || true
+            echo "[DONE]  Pulled $img_base"
+        else
+            echo "[ERROR] Failed to pull $img_base from $registry_img"
+            return 1
+        fi
     else
-        echo "[ERROR] Failed to load $img_base"
+        echo "[ERROR] No tarball and no registry for $img_base"
         return 1
     fi
 }

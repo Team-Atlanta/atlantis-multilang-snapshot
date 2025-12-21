@@ -16,6 +16,16 @@ if [ -z "${CRS_CACHE_DIR:-}" ]; then
 fi
 export CRS_CACHE_DIR
 
+# =============================================================================
+# Registry Configuration (for pulling images instead of loading tarballs)
+# =============================================================================
+
+# Container registry URL for pulling pre-built CRS images
+# If set, load-cache.sh will pull from registry when tarballs are not available
+# Default: ghcr.io/team-atlanta/atlantis-multilang-snapshot
+CRS_REGISTRY="${CRS_REGISTRY:-ghcr.io/team-atlanta/atlantis-multilang-snapshot}"
+export CRS_REGISTRY
+
 # Docker volume name for pre-populated images (used by prepare-cache.sh --volume)
 CRS_VOLUME_NAME="${CRS_VOLUME_NAME:-crs-multilang-images}"
 export CRS_VOLUME_NAME

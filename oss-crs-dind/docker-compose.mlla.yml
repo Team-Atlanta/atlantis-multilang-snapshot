@@ -82,6 +82,9 @@ services:
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909
       - LSP_SERVER_URL=http://lsp:3303
+      # Real-time output to mounted /artifacts/ directory
+      - CRS_POV_DIR=/artifacts/povs
+      - CRS_CORPUS_DIR=/artifacts/corpus
     # Volume mounts use DinD container paths (not HOST_* paths)
     # These paths exist in the outer DinD container's filesystem
     volumes:

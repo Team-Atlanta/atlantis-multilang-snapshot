@@ -39,6 +39,9 @@ services:
       - CRS_NAME=${CRS_NAME:-crs-multilang}
       - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
       - DICTGEN_REDIS_URL=redis://redis:6379
+      # Real-time output to mounted /artifacts/ directory
+      - CRS_POV_DIR=/artifacts/povs
+      - CRS_CORPUS_DIR=/artifacts/corpus
     # Volume mounts use DinD container paths (not HOST_* paths)
     # These paths exist in the outer DinD container's filesystem
     volumes:

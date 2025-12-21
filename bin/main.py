@@ -544,13 +544,22 @@ class AnyHR(HarnessRunner):
     async def async_run(self):
         if os.environ.get("COV_RUNNER", False):
             return await self._async_run_cov_runner()
-        self.uniafl_corpus_dir = self.get_workdir("uniafl_corpus")
+        # Support direct output to mounted directories (e.g., /artifacts/)
+        if os.environ.get("CRS_CORPUS_DIR"):
+            self.uniafl_corpus_dir = Path(os.environ["CRS_CORPUS_DIR"]) / self.harness.name
+            os.makedirs(self.uniafl_corpus_dir, exist_ok=True)
+        else:
+            self.uniafl_corpus_dir = self.get_workdir("uniafl_corpus")
         self.uniafl_cov_dir = self.get_workdir("uniafl_cov")
         self.uniafl_config_path = None
         self.others_corpus_dir = self.get_workdir("others_corpus")
         await self.__unzip_given_corpus(self.others_corpus_dir)
         await self.__copy_corpus_from_other_cp(self.others_corpus_dir)
-        self.pov_dir = self.get_workdir("pov")
+        if os.environ.get("CRS_POV_DIR"):
+            self.pov_dir = Path(os.environ["CRS_POV_DIR"]) / self.harness.name
+            os.makedirs(self.pov_dir, exist_ok=True)
+        else:
+            self.pov_dir = self.get_workdir("pov")
         self.ms_per_exec = await self.__async_get_ms_per_exec()
         await self.crs.uniafl.async_run(self)
 

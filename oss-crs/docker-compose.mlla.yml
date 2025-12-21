@@ -82,6 +82,8 @@ services:
       - SEED_SHARE_DIR=/seed_share_dir
       - CRS_NAME=${CRS_NAME:-crs-multilang}
       - CRS_SKIP_SAVE=${CRS_SKIP_SAVE:-}
+      - CRS_POV_DIR=/artifacts/povs
+      - CRS_CORPUS_DIR=/artifacts/corpus
       - CODE_INDEXER_REDIS_URL=redis://redis:6379
       - DICTGEN_REDIS_URL=redis://redis:6379
       - JOERN_URL=http://joern:9909

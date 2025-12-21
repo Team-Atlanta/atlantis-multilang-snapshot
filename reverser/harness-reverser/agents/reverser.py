@@ -891,7 +891,13 @@ class ReverserAgent:
                     # TODO: Sample only one UAF pov
                     while len(self.crash_logs) < 3 and new_povs:
                         pov_name = new_povs.pop()
-                        with open(self.config.pov_dir / f"{pov_name}.crash_log", "r", errors="replace") as f:
+                        # Try hidden file first, fallback to non-hidden for old POVs
+                        crash_log_path = self.config.pov_dir / f".{pov_name}.crash_log"
+                        if not crash_log_path.exists():
+                            crash_log_path = self.config.pov_dir / f"{pov_name}.crash_log"
+                        if not crash_log_path.exists():
+                            continue
+                        with open(crash_log_path, "r", errors="replace") as f:
                             crash_log = f.read()
 
                             # Trim

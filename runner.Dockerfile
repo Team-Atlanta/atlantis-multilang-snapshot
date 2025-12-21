@@ -1,1 +1,1 @@
-oss-crs/runner.Dockerfile
+oss-crs-dind/runner.Dockerfile

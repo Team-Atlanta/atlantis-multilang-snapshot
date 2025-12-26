@@ -48,6 +48,10 @@ services:
       - /artifacts/tarballs:/tarballs:ro  # DinD's /artifacts/tarballs → nested /tarballs
       - /out:/out                          # DinD's /out → nested /out
       - /artifacts:/artifacts              # DinD's /artifacts → nested /artifacts
+      # Per-harness artifact overlays (oss-crs mounts these to DinD container)
+      - /artifacts/povs:/artifacts/povs
+      - /artifacts/corpus:/artifacts/corpus
+      - /artifacts/crs-data:/artifacts/crs-data
       - /tmp/crs.config:/crs.config:ro
     depends_on:
       - redis

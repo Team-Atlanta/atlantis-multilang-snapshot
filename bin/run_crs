@@ -11,7 +11,8 @@ save_results() {
         echo "=== Saving CRS results to /artifacts/ ==="
 
         # Create output directories
-        mkdir -p /artifacts/workdir_result
+        # mkdir -p /artifacts/workdir_result
+        mkdir -p /artifacts/crs-data/workdir_result
 
         # Find and copy results from each harness workdir
         for harness_dir in /crs-workdir/worker-*/HarnessRunner/*/; do
@@ -22,22 +23,28 @@ save_results() {
                 # Copy POVs (skip if CRS_POV_DIR set - already written directly)
                 if [ -z "$CRS_POV_DIR" ]; then
                     if [ -d "$harness_dir/pov" ] && [ "$(ls -A "$harness_dir/pov" 2>/dev/null)" ]; then
-                        mkdir -p /artifacts/povs/$harness
-                        cp -r "$harness_dir/pov/"* /artifacts/povs/$harness/ 2>/dev/null || true
+                        # mkdir -p /artifacts/povs/$harness
+                        # cp -r "$harness_dir/pov/"* /artifacts/povs/$harness/ 2>/dev/null || true
+                        mkdir -p /artifacts/povs
+                        cp -r "$harness_dir/pov/"* /artifacts/povs/ 2>/dev/null || true
                     fi
                 fi
 
                 # Copy corpus (skip if CRS_CORPUS_DIR set - already written directly)
                 if [ -z "$CRS_CORPUS_DIR" ]; then
                     if [ -d "$harness_dir/uniafl_corpus" ] && [ "$(ls -A "$harness_dir/uniafl_corpus" 2>/dev/null)" ]; then
-                        mkdir -p /artifacts/corpus/$harness
-                        cp -r "$harness_dir/uniafl_corpus/"* /artifacts/corpus/$harness/ 2>/dev/null || true
+                        # mkdir -p /artifacts/corpus/$harness
+                        # cp -r "$harness_dir/uniafl_corpus/"* /artifacts/corpus/$harness/ 2>/dev/null || true
+                        mkdir -p /artifacts/corpus
+                        cp -r "$harness_dir/uniafl_corpus/"* /artifacts/corpus/ 2>/dev/null || true
                     fi
                 fi
 
                 # Copy full workdir (logs, coverage, etc.)
-                mkdir -p /artifacts/workdir_result/$harness
-                cp -r "$harness_dir"/* /artifacts/workdir_result/$harness/ 2>/dev/null || true
+                # mkdir -p /artifacts/workdir_result/$harness
+                # cp -r "$harness_dir"/* /artifacts/workdir_result/$harness/ 2>/dev/null || true
+                mkdir -p /artifacts/crs-data/workdir_result
+                cp -r "$harness_dir"/* /artifacts/crs-data/workdir_result/ 2>/dev/null || true
             fi
         done
 

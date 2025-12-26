@@ -241,7 +241,9 @@ All images are defined in `config.sh`:
 │   └── aixcc_conf.yaml
 ├── povs/                      # POV files (created by runner)
 ├── corpus/                    # Corpus files (created by runner)
-└── workdir_result/            # Full workdir backup (created by runner)
+└── crs-data/                  # CRS runtime data (created by runner)
+    ├── workdir_result/        # Full workdir backup
+    └── eval_result/           # Evaluation results
 ```
 
 ## MLLA Mode

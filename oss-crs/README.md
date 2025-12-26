@@ -120,18 +120,15 @@ After fuzzing, results are automatically saved to `HOST_ARTIFACT_DIR` (mapped to
 HOST_ARTIFACT_DIR/
 ├── tarballs/                    # Build artifacts (from build phase)
 ├── povs/                        # Proof-of-Vulnerability inputs
-│   └── {harness_name}/
 ├── corpus/                      # Corpus inputs (from uniafl_corpus)
-│   └── {harness_name}/
-├── workdir_result/              # Full workdir copy
-│   └── {harness_name}/
-│       ├── uniafl_corpus/
-│       ├── uniafl_cov/
-│       ├── pov/
-│       ├── others_corpus/
-│       └── uniafl/
-├── eval_result/                 # (if EVAL_SEC > 0)
-└── workdir_result/              # (if SAVE_WORKDIR_RESULT=True)
+└── crs-data/                    # CRS runtime data
+    ├── workdir_result/          # Full workdir copy
+    │   ├── uniafl_corpus/
+    │   ├── uniafl_cov/
+    │   ├── pov/
+    │   ├── others_corpus/
+    │   └── uniafl/
+    └── eval_result/             # (if EVAL_SEC > 0)
 ```
 
 To disable automatic result saving, set `CRS_SKIP_SAVE=True`.

@@ -127,9 +127,11 @@ HOST_ARTIFACT_DIR → /artifacts # Results (persistent)
 ```
 HOST_ARTIFACT_DIR/
 ├── tarballs/          # Build artifacts (repo, project, fuzzers)
-├── povs/              # POV files by harness
-├── corpus/            # Corpus by harness
-└── workdir_result/    # Full workdir backup
+├── povs/              # POV files
+├── corpus/            # Corpus files
+└── crs-data/          # CRS runtime data
+    ├── workdir_result/    # Full workdir backup
+    └── eval_result/       # Evaluation results
 ```
 
 This separation ensures:
@@ -492,7 +494,7 @@ if not is_eval() and os.environ.get("CRS_SKIP_SAVE") != "True":
     asyncio.run(crs.save_eval_result(eval_time))
 ```
 
-**Output:** Creates `/artifacts/eval_result/` with:
+**Output:** Creates `/artifacts/crs-data/eval_result/` with:
 - Seed creation times
 - Coverage over time data
 - Crash reports
@@ -705,16 +707,16 @@ tarballs/
 ```
 HOST_ARTIFACT_DIR/
 ├── tarballs/              # Build artifacts
-├── povs/{harness}/        # POV files
-├── corpus/{harness}/      # Corpus from uniafl_corpus
-├── workdir_result/        # Full workdir copy
-│   └── {harness}/
-│       ├── uniafl_corpus/
-│       ├── uniafl_cov/
-│       ├── pov/
-│       ├── others_corpus/
-│       └── uniafl/
-├── eval_result/           # (if EVAL_SEC > 0)
+├── povs/                  # POV files
+├── corpus/                # Corpus from uniafl_corpus
+├── crs-data/              # CRS runtime data
+│   ├── workdir_result/    # Full workdir copy
+│   │   ├── uniafl_corpus/
+│   │   ├── uniafl_cov/
+│   │   ├── pov/
+│   │   ├── others_corpus/
+│   │   └── uniafl/
+│   └── eval_result/       # (if EVAL_SEC > 0)
 └── crs.config.{harness}   # Runtime config
 ```
 

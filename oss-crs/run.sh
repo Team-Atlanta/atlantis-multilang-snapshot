@@ -97,6 +97,12 @@ export HOST_OUT_DIR="${HOST_OUT_DIR:-/out}"
 # If not set, defaults to HOST_OUT_DIR for backward compatibility
 export HOST_ARTIFACT_DIR="${HOST_ARTIFACT_DIR:-$HOST_OUT_DIR}"
 
+# Per-harness artifact directories for POVs, corpus, and CRS data
+# Uses run/{harness}/ convention for per-harness isolation
+export HOST_POV_DIR="${HOST_POV_DIR:-$HOST_ARTIFACT_DIR/run/$HARNESS_NAME/povs}"
+export HOST_CORPUS_DIR="${HOST_CORPUS_DIR:-$HOST_ARTIFACT_DIR/run/$HARNESS_NAME/corpus}"
+export HOST_CRS_DATA_DIR="${HOST_CRS_DATA_DIR:-$HOST_ARTIFACT_DIR/run/$HARNESS_NAME/crs-data}"
+
 # Network configuration:
 # - crs-internal: Always created, project-scoped, isolated per project/harness
 # - crs-external: For LiteLLM connectivity

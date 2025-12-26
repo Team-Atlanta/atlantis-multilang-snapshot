@@ -91,6 +91,10 @@ services:
     volumes:
       - ${HOST_ARTIFACT_DIR:-/out}/tarballs:/tarballs:ro
       - ${HOST_ARTIFACT_DIR:-/out}:/artifacts
+      # Per-harness artifact overlays
+      - ${HOST_POV_DIR}:/artifacts/povs
+      - ${HOST_CORPUS_DIR}:/artifacts/corpus
+      - ${HOST_CRS_DATA_DIR}:/artifacts/crs-data
       - ${HOST_OUT_DIR:-/out}:/out
       - ${HOST_CRS_CONFIG:-/tmp/crs.config}:/crs.config:ro
     depends_on:

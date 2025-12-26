@@ -546,7 +546,8 @@ class AnyHR(HarnessRunner):
             return await self._async_run_cov_runner()
         # Support direct output to mounted directories (e.g., /artifacts/)
         if os.environ.get("CRS_CORPUS_DIR"):
-            self.uniafl_corpus_dir = Path(os.environ["CRS_CORPUS_DIR"]) / self.harness.name
+            # self.uniafl_corpus_dir = Path(os.environ["CRS_CORPUS_DIR"]) / self.harness.name
+            self.uniafl_corpus_dir = Path(os.environ["CRS_CORPUS_DIR"])
             os.makedirs(self.uniafl_corpus_dir, exist_ok=True)
         else:
             self.uniafl_corpus_dir = self.get_workdir("uniafl_corpus")
@@ -556,7 +557,8 @@ class AnyHR(HarnessRunner):
         await self.__unzip_given_corpus(self.others_corpus_dir)
         await self.__copy_corpus_from_other_cp(self.others_corpus_dir)
         if os.environ.get("CRS_POV_DIR"):
-            self.pov_dir = Path(os.environ["CRS_POV_DIR"]) / self.harness.name
+            # self.pov_dir = Path(os.environ["CRS_POV_DIR"]) / self.harness.name
+            self.pov_dir = Path(os.environ["CRS_POV_DIR"])
             os.makedirs(self.pov_dir, exist_ok=True)
         else:
             self.pov_dir = self.get_workdir("pov")
@@ -696,7 +698,8 @@ class AnyCRS(CRS):
         if os.environ.get("SAVE_WORKDIR_RESULT") != "True":
             return
 
-        workdir_result_dir = Path("/artifacts/workdir_result")
+        # workdir_result_dir = Path("/artifacts/workdir_result")
+        workdir_result_dir = Path("/artifacts/crs-data/workdir_result")
         await util.async_rm(workdir_result_dir)
         os.makedirs(workdir_result_dir, exist_ok=True)
 
@@ -705,14 +708,16 @@ class AnyCRS(CRS):
         for hrunner in self.hrunners:
             harness_workdir = hrunner.get_workdir("uniafl") / ".."
             if harness_workdir.exists():
-                dest_dir = workdir_result_dir / hrunner.harness.name
+                # dest_dir = workdir_result_dir / hrunner.harness.name
+                dest_dir = workdir_result_dir
                 self.log(f"[Eval] Save workdir {harness_workdir} to {dest_dir}")
                 await util.async_cp(harness_workdir, dest_dir)
             else:
                 self.log(f"[Eval] No workdir found for {hrunner.harness.name}")
 
     async def save_eval_result(self, eval_time):
-        result_dir = Path("/artifacts/eval_result")
+        # result_dir = Path("/artifacts/eval_result")
+        result_dir = Path("/artifacts/crs-data/eval_result")
         await util.async_rm(result_dir)
         self.log(f"[Eval] Save result into {result_dir}")
 

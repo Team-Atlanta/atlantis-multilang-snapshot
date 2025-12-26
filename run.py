@@ -942,11 +942,13 @@ class Target:
         out_dir = args["out"] / self.name
         self.__run_cmd(["rm", "-rf", out_dir])
         os.makedirs(out_dir, exist_ok=True)
-        eval_result = self.artifact_path / "eval_result"
+        # eval_result = self.artifact_path / "eval_result"
+        eval_result = self.artifact_path / "crs-data" / "eval_result"
         self.__run_cmd([f"cp", "-r", eval_result, out_dir])
 
         if args.get("copy_workdir"):
-            workdir_result = self.artifact_path / "workdir_result"
+            # workdir_result = self.artifact_path / "workdir_result"
+            workdir_result = self.artifact_path / "crs-data" / "workdir_result"
             self.__run_cmd([f"cp", "-r", workdir_result, out_dir])
 
     def __run_crs(self, args):

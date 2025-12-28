@@ -20,6 +20,19 @@ source /crs-runner/config.sh
 HARNESS_NAME="$1"
 shift || true
 
+# Sanitize names for docker compose project/container naming
+# Docker Compose requires lowercase project names
+sanitize_name() {
+    echo "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '_' | sed 's/_*$//'
+}
+
+# Set COMPOSE_PROJECT_NAME early so cleanup can use it
+SAFE_TARGET=$(sanitize_name "${CRS_TARGET:-crs}")
+SAFE_HARNESS=$(sanitize_name "$HARNESS_NAME")
+export SAFE_TARGET
+export SAFE_HARNESS
+export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}"
+
 echo "=== CRS-Multilang Run Phase (DinD) ==="
 echo "Harness: $HARNESS_NAME"
 echo "Environment:"
@@ -155,9 +168,9 @@ export CPUSET_CPUS="${CPUSET_CPUS:-0-7}"
 export MEMORY_LIMIT="${MEMORY_LIMIT:-16G}"
 export LITELLM_URL="${LITELLM_URL:-}"
 export LITELLM_KEY="${LITELLM_KEY:-}"
-# Sanitize CRS_TARGET for Docker image naming (replace / with _)
+# Sanitize CRS_TARGET for Docker image naming (lowercase for registry compatibility)
 CRS_TARGET_RAW="${CRS_TARGET:-}"
-export CRS_TARGET=$(echo "$CRS_TARGET_RAW" | tr '/' '_')
+export CRS_TARGET=$(echo "$CRS_TARGET_RAW" | tr '/' '_' | tr '[:upper:]' '[:lower:]')
 export CRS_NAME="${CRS_NAME:-crs-multilang}"
 export CRS_SKIP_SAVE="${CRS_SKIP_SAVE:-}"
 export CRS_INPUT_GENS="$CRS_INPUT_GENS"

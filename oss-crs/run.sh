@@ -4,9 +4,10 @@ set -eu
 HARNESS_NAME="$1"
 shift || true
 
-# Sanitize names for docker compose project/container naming (replace special chars with underscore)
+# Sanitize names for docker compose project/container naming
+# Docker Compose requires lowercase project names
 sanitize_name() {
-    echo "$1" | tr -c 'a-zA-Z0-9_-' '_' | sed 's/_*$//'
+    echo "$1" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '_' | sed 's/_*$//'
 }
 
 # Set COMPOSE_PROJECT_NAME early so cleanup can use it
@@ -72,8 +73,8 @@ export LITELLM_URL="${LITELLM_URL:-}"
 # Derive LSP runner image name from CRS_TARGET (provided by oss-crs)
 # LSP runner image follows pattern: multilang-lsp-{project_name}
 if [ -n "${CRS_TARGET:-}" ]; then
-    # Sanitize project name same way as build.sh does (tr '/' '_')
-    PROJECT_SAFE_NAME=$(echo "$CRS_TARGET" | tr '/' '_')
+    # Sanitize project name same way as build.sh does (lowercase for registry compatibility)
+    PROJECT_SAFE_NAME=$(echo "$CRS_TARGET" | tr '/' '_' | tr '[:upper:]' '[:lower:]')
     export LSP_RUNNER="crs-multilang/multilang-lsp-${PROJECT_SAFE_NAME}:latest"
     echo "LSP Runner image: $LSP_RUNNER"
 else

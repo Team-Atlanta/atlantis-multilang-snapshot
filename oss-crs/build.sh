@@ -56,8 +56,8 @@ docker tag multilang-c-archive crs-multilang/multilang-c-archive:latest
 docker tag multilang-jvm-archive crs-multilang/multilang-jvm-archive:latest
 docker tag multilang-runner-joern crs-multilang/multilang-runner-joern:latest
 
-# Sanitize project name for Docker image naming
-SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_')
+# Sanitize project name for Docker image naming (lowercase for registry compatibility)
+SAFE_PROJECT=$(echo "$PROJECT_NAME" | tr '/' '_' | tr '[:upper:]' '[:lower:]')
 
 # Step 4: Build fuzzers using run.py build
 echo "Building fuzzers via run.py build..."

@@ -29,7 +29,10 @@ class CorpusSearcher:
                 f"{corpus_directory_path}{os.sep}**", recursive=True
             )
             corpuses.extend(
-                [corpus_f for corpus_f in glob_result if os.path.isfile(corpus_f)]
+                [corpus_f for corpus_f in glob_result
+                 if os.path.isfile(corpus_f)
+                 and not os.path.basename(corpus_f).startswith('.')
+                 and not corpus_f.endswith('.cov')]
             )
 
         new_corpuses = list()

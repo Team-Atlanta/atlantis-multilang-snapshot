@@ -148,8 +148,8 @@ export LSP_IMAGE_PREFIX LSP_IMAGE_TARBALL
 # Args: $1 = project name (will be sanitized)
 get_lsp_image_name() {
     local project="$1"
-    # Sanitize project name (replace / with _)
-    local safe_project=$(echo "$project" | tr '/' '_')
+    # Sanitize project name (lowercase for registry compatibility)
+    local safe_project=$(echo "$project" | tr '/' '_' | tr '[:upper:]' '[:lower:]')
     echo "${LSP_IMAGE_PREFIX}${safe_project}:latest"
 }
 export -f get_lsp_image_name

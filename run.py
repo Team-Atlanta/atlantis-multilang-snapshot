@@ -173,7 +173,8 @@ def extract_base_image(dockerfile):
 
 
 def lsp_runner_docker_name(proj_name):
-    return f"multilang-lsp-{proj_name.replace('/', '_')}"
+    # Lowercase for Docker registry compatibility
+    return f"multilang-lsp-{proj_name.replace('/', '_').lower()}"
 
 
 def build_cp_docker_image(proj_name, image_name=None):

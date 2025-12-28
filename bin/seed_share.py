@@ -28,11 +28,11 @@ class SeedShare:
         self.our_cov_dir = Path(our_cov_dir)
         self.our_dst_dir = Path(our_dst_dir)
         crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
-        our_shared_dir = Path(share_dir) / crs_name / harness_name
+        our_shared_dir = Path(share_dir) / crs_name
         os.makedirs(str(our_shared_dir), exist_ok=True)
         self.our_shared_dir = our_shared_dir
 
-        our_cov_shared_dir = Path(share_dir) / "coverage_shared_dir" / harness_name
+        our_cov_shared_dir = Path(share_dir) / crs_name / "coverage"
         os.makedirs(str(our_cov_shared_dir), exist_ok=True)
         self.our_cov_shared_dir = our_cov_shared_dir
 
@@ -74,7 +74,7 @@ class SeedShare:
         self.info(f"Share {self.our_src_dir} => {self.our_shared_dir}: {n}")
 
     def copy_share_to_ours(self, crs_name):
-        src = self.share_dir / crs_name / self.harness_name
+        src = self.share_dir / crs_name
         if not src.exists():
             return
 

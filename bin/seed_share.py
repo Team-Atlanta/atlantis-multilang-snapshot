@@ -27,12 +27,12 @@ class SeedShare:
         self.our_src_dir = Path(our_src_dir)
         self.our_cov_dir = Path(our_cov_dir)
         self.our_dst_dir = Path(our_dst_dir)
-        crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
-        our_shared_dir = Path(share_dir) / crs_name
+        self.crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
+        our_shared_dir = Path(share_dir) / self.crs_name
         os.makedirs(str(our_shared_dir), exist_ok=True)
         self.our_shared_dir = our_shared_dir
 
-        our_cov_shared_dir = Path(share_dir) / crs_name / "coverage"
+        our_cov_shared_dir = Path(share_dir) / self.crs_name / "coverage"
         os.makedirs(str(our_cov_shared_dir), exist_ok=True)
         self.our_cov_shared_dir = our_cov_shared_dir
 
@@ -45,11 +45,15 @@ class SeedShare:
     def sync(self):
         self.copy_ours_to_share()
         self.copy_coverage_to_share()
-        self.copy_share_to_ours("crs-java")
-        self.copy_share_to_ours("crs-userspace")
-        self.copy_share_to_ours("crs-sarif")
+        # Dynamically discover other CRS directories
+        if self.share_dir.exists():
+            for crs_dir in self.share_dir.iterdir():
+                if crs_dir.is_dir() and crs_dir.name != self.crs_name:
+                    self.copy_share_to_ours(crs_dir.name)
 
     def copy_coverage_to_share(self):
+        if not self.our_cov_dir.exists():
+            return
         n = 0
         for cov in self.our_cov_dir.iterdir():
             if cov in self.stored or not cov.name.endswith(".cov"):

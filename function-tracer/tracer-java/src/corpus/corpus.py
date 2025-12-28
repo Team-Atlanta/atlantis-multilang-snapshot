@@ -15,19 +15,22 @@ class CorpusSearcher:
         self.corpus_directory = corpus_directory
 
     def search_new_corpus(self) -> list[Corpus]:
-        base_fuzzer_directories = ["crs-java", "crs-multilang", "crs-userspace"]
+        # Dynamically discover all CRS directories except our own
+        our_crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
         corpuses = list()
-        for base_fuzzer_directory in base_fuzzer_directories:
-            corpus_directory_path = os.path.join(
-                self.corpus_directory, base_fuzzer_directory
+        if not os.path.isdir(self.corpus_directory):
+            return []
+        for entry in os.listdir(self.corpus_directory):
+            corpus_directory_path = os.path.join(self.corpus_directory, entry)
+            # Skip our own CRS directory and non-directories
+            if entry == our_crs_name or not os.path.isdir(corpus_directory_path):
+                continue
+            glob_result = glob.glob(
+                f"{corpus_directory_path}{os.sep}**", recursive=True
             )
-            if os.path.isdir(corpus_directory_path):
-                glob_result = glob.glob(
-                    f"{corpus_directory_path}{os.sep}**", recursive=True
-                )
-                corpuses.extend(
-                    [corpus_f for corpus_f in glob_result if os.path.isfile(corpus_f)]
-                )
+            corpuses.extend(
+                [corpus_f for corpus_f in glob_result if os.path.isfile(corpus_f)]
+            )
 
         new_corpuses = list()
         for corpus_path in corpuses:

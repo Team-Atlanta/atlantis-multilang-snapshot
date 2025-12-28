@@ -27,7 +27,8 @@ class SeedShare:
         self.our_src_dir = Path(our_src_dir)
         self.our_cov_dir = Path(our_cov_dir)
         self.our_dst_dir = Path(our_dst_dir)
-        our_shared_dir = Path(share_dir) / "crs-multilang" / harness_name
+        crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
+        our_shared_dir = Path(share_dir) / crs_name / harness_name
         os.makedirs(str(our_shared_dir), exist_ok=True)
         self.our_shared_dir = our_shared_dir
 

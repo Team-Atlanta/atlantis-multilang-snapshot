@@ -32,10 +32,6 @@ class SeedShare:
         os.makedirs(str(our_shared_dir), exist_ok=True)
         self.our_shared_dir = our_shared_dir
 
-        our_cov_shared_dir = Path(share_dir) / self.crs_name / "coverage"
-        os.makedirs(str(our_cov_shared_dir), exist_ok=True)
-        self.our_cov_shared_dir = our_cov_shared_dir
-
         self.loaded = set()
         self.stored = set()
 
@@ -44,37 +40,32 @@ class SeedShare:
 
     def sync(self):
         self.copy_ours_to_share()
-        self.copy_coverage_to_share()
         # Dynamically discover other CRS directories
         if self.share_dir.exists():
             for crs_dir in self.share_dir.iterdir():
                 if crs_dir.is_dir() and crs_dir.name != self.crs_name:
                     self.copy_share_to_ours(crs_dir.name)
 
-    def copy_coverage_to_share(self):
-        if not self.our_cov_dir.exists():
+    def copy_ours_to_share(self):
+        if not self.our_src_dir.exists():
             return
         n = 0
-        for cov in self.our_cov_dir.iterdir():
-            if cov in self.stored or not cov.name.endswith(".cov"):
-                continue
-            self.stored.add(cov)
-            dst = self.our_cov_shared_dir / cov.name
-            rsync_file(cov, dst)
-            n += 1
-        self.info(
-            f"Share coverage {self.our_cov_dir} => {self.our_cov_shared_dir}: {n}"
-        )
-
-    def copy_ours_to_share(self):
-        n = 0
         for seed in self.our_src_dir.iterdir():
-            if seed in self.stored or seed.name.startswith("."):
+            if seed.name.startswith(".") or seed.name.endswith(".cov"):
                 continue
-            self.stored.add(seed)
-            dst = self.our_shared_dir / seed.name
-            rsync_file(seed, dst)
-            n += 1
+
+            # Copy seed if not already stored
+            if seed not in self.stored:
+                self.stored.add(seed)
+                dst = self.our_shared_dir / seed.name
+                rsync_file(seed, dst)
+                n += 1
+
+            # Always check for coverage updates (outside stored check)
+            cov_src = self.our_cov_dir / (seed.name + ".cov")
+            cov_dst = self.our_shared_dir / ("." + seed.name + ".cov")
+            if cov_src.exists() and not cov_dst.exists():
+                rsync_file(cov_src, cov_dst)
         self.info(f"Share {self.our_src_dir} => {self.our_shared_dir}: {n}")
 
     def copy_share_to_ours(self, crs_name):
@@ -84,14 +75,21 @@ class SeedShare:
 
         n = 0
         for src_seed in src.iterdir():
-            if src_seed in self.loaded or src_seed.name.startswith("."):
+            # Skip hidden files and .cov files explicitly
+            if src_seed in self.loaded or src_seed.name.startswith(".") or src_seed.name.endswith(".cov"):
                 continue
             self.loaded.add(src_seed)
+            # Copy seed
             workdir_dst = self.workdir / src_seed.name
             rsync_file(src_seed, workdir_dst)
             dst = self.our_dst_dir / src_seed.name
             cp(workdir_dst, dst)
             n += 1
+            # Copy hidden coverage file .{seed_name}.cov if exists
+            cov_src = src / ("." + src_seed.name + ".cov")
+            if cov_src.exists():
+                cov_dst = self.our_cov_dir / (src_seed.name + ".cov")
+                rsync_file(cov_src, cov_dst)
         self.info(f"Share {src} => {self.our_dst_dir}: {n}")
 
 

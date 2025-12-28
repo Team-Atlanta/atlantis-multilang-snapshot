@@ -576,8 +576,9 @@ class AnyHR(HarnessRunner):
         seed_share_dir = Path(get_seed_share_dir())
         seed_share_dir_name = seed_share_dir.name
         rootdir = seed_share_dir.parent.parent
+        crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
         candidates = list(
-            rootdir.glob(f"*/{seed_share_dir_name}/crs-multilang/{self.harness.name}")
+            rootdir.glob(f"*/{seed_share_dir_name}/{crs_name}/{self.harness.name}")
         )
         if len(candidates) == 0:
             self.log(f"No reusable corpus found for {self.harness.name}")

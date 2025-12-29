@@ -71,41 +71,26 @@ echo ""
 echo "[2/5] Loading project image from /project-image.tar..."
 docker load -i /project-image.tar
 
-# Step 3: Prepare tarballs for run.py build
+# Step 3: Prepare source tarball
+# Following host_docker_builder pattern: only create repo.tar.gz manually
+# Let run.py build handle project.tar.gz, fuzzers.tar.gz, and aixcc_conf.yaml
 echo ""
-echo "[3/5] Preparing tarballs..."
+echo "[3/5] Preparing source tarball..."
 TARBALL_DIR=/artifacts/tarballs
 mkdir -p "$TARBALL_DIR"
 
-# In DinD mode, nested Docker can access container paths directly
-# The nested Docker daemon runs inside this container and shares the filesystem
-# So we use /artifacts/tarballs not HOST paths
-
-# Extract source code from SOURCE_DIR (captured at script start)
-echo "Extracting source from $SOURCE_DIR to repo.tar.gz..."
-tar -cvzf "$TARBALL_DIR/repo.tar.gz" -C "$SOURCE_DIR" .
-
-# Create project.tar.gz from oss-fuzz project files
-# Use -C to create files at root level (project.yaml, not mock-c/project.yaml)
-# This matches what get_cp expects when extracting to /src/
-echo "Creating project.tar.gz from libs/oss-fuzz/projects/$PROJECT_NAME/..."
-tar -cvzf "$TARBALL_DIR/project.tar.gz" -C "/crs-multilang/libs/oss-fuzz/projects/$PROJECT_NAME" .
-
-# Copy aixcc config if it exists (required by init_codeindexer for MLLA mode)
-AIXCC_CONFIG="/crs-multilang/libs/oss-fuzz/projects/$PROJECT_NAME/.aixcc/config.yaml"
-if [ -f "$AIXCC_CONFIG" ]; then
-    echo "Copying aixcc config from project..."
-    cp "$AIXCC_CONFIG" "$TARBALL_DIR/aixcc_conf.yaml"
+# Create repo.tar.gz from source directory (same as host_docker_builder)
+REPO_TARBALL="$TARBALL_DIR/repo.tar.gz"
+if [ ! -f "$REPO_TARBALL" ]; then
+    echo "Creating repo.tar.gz from source directory..."
+    tar --use-compress-program=pigz -cf "$REPO_TARBALL" -C "$SOURCE_DIR" .
+    echo "Created $REPO_TARBALL"
 else
-    echo "WARNING: No .aixcc/config.yaml found in project. Creating minimal default..."
-    cat > "$TARBALL_DIR/aixcc_conf.yaml" << AIXCC_EOF
-cp_name: "${PROJECT_NAME}"
-full_mode:
-  base_commit: ""
-AIXCC_EOF
+    echo "repo.tar.gz already exists, skipping creation"
 fi
 
 # Step 4: Build fuzzers using run.py build
+# run.py build handles: project.tar.gz, fuzzers.tar.gz, aixcc_conf.yaml (via create_conf)
 echo ""
 echo "[4/5] Building fuzzers via run.py build..."
 # Disable buildx/buildkit - may have compatibility issues in nested DinD
@@ -117,14 +102,12 @@ python3 run.py build \
     --focus "" \
     --registry local \
     --image-version latest \
-    --skip-symcc-verification
+    --skip-symcc-verification \
+    --start-other-services
 
-# Step 5: Create fuzzers tarball
+# Step 5: Mark build as done
 echo ""
-echo "[5/5] Creating fuzzers.tar.gz from /out..."
-cd /out && tar -cvzf "$TARBALL_DIR/fuzzers.tar.gz" . && cd /crs-multilang
-
-# Mark build as done
+echo "[5/5] Finalizing build..."
 touch "$TARBALL_DIR/DONE"
 
 # Note: No need to export images as tarballs anymore

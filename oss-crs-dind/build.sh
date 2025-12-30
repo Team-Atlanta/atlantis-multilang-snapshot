@@ -71,6 +71,12 @@ echo ""
 echo "[2/5] Loading project image from /project-image.tar..."
 docker load -i /project-image.tar
 
+# Tag the loaded image to the name run.py expects
+# PARENT_IMAGE is set by oss-crs (e.g., gcr.io/oss-fuzz/mock-java)
+# run.py expects aixcc-afc/<project>:latest
+echo "Tagging $PARENT_IMAGE as aixcc-afc/$PROJECT_NAME:latest..."
+docker tag "$PARENT_IMAGE" "aixcc-afc/$PROJECT_NAME:latest"
+
 # Step 3: Prepare source tarball
 # Following host_docker_builder pattern: only create repo.tar.gz manually
 # Let run.py build handle project.tar.gz, fuzzers.tar.gz, and aixcc_conf.yaml
@@ -104,6 +110,16 @@ python3 run.py build \
     --image-version latest \
     --skip-symcc-verification \
     --start-other-services
+
+# Copy build outputs from /out to /artifacts/tarballs for the runner
+# run.py writes to --out-dir /out, but nested CRS container reads from /tarballs
+# (mounted from /artifacts/tarballs in docker-compose.yml)
+# Required files: DONE, project.tar.gz, fuzzers.tar.gz, repo.tar.gz, aixcc_conf.yaml
+# Optional: coverage.tar.gz, compile_commands.json
+echo "Copying build outputs from /out to $TARBALL_DIR..."
+cp -v /out/*.tar.gz "$TARBALL_DIR/"
+cp -v /out/aixcc_conf.yaml "$TARBALL_DIR/" 2>/dev/null || true
+cp -v /out/compile_commands.json "$TARBALL_DIR/" 2>/dev/null || true
 
 # Step 5: Mark build as done
 echo ""

@@ -387,7 +387,7 @@ if __name__ == "__main__":
     )
 
     timeout_seconds = (
-        9 * 60 + 30
+        59 * 60 + 30
     )  # 9 minutes 30 seconds (30 seconds shorter than uniafl timeout)
 
     while True:

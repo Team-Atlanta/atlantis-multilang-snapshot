@@ -3,24 +3,15 @@
 import asyncio
 import glob
 import json
+import logging
 import os
 import shlex
 import sys
-import threading
-import time
 from pathlib import Path
 
-import pyinotify
-import yaml
-from fuzzdb import FuzzDB
-from libCRS import CRS, Config, HarnessRunner, Module, init_cp_in_runner, util, get_available_cpus
+from libCRS import CRS, Config, CRSPaths, HarnessRunner, Module, init_cp_in_runner, util
 from libCRS.challenge import CP_Harness
-from libCRS.otel import install_otel_logger
 from libCRS.util import TestResult
-from redis import Redis
-
-sys.path.insert(0, "/usr/local/bin/symbolizer")
-from llvm_symbolizer import LLVMSymbolizer
 
 
 def dict_to_json(data):
@@ -82,34 +73,17 @@ class FuzzerOpt:
 class UniAFL(Module):
     BASE = Path("/home/crs/uniafl/")
     BIN = BASE / "target/release/uniafl"
-    REVERSER = Path("/home/crs/reverser/harness-reverser/")
-    DICTGEN_PATH = "/home/crs/dictgen/src/dictgen.py"
-    DIFF_PATH = Path("/src/ref.diff")
+    DIFF_PATH = CRSPaths.get_diff_path()
 
     def _init(self) -> None:
         self.redis_url = {}
         self.fuzzer_opts = {}
         self.port = 22222
-        llm_test = os.environ.get("LLM_TEST")
-        if llm_test:
-            self.tests_without_harness = []
-            self.tests_with_harness = []
-            if llm_test == "mlla":
-                self.tests_with_harness = [self._async_test_mlla]
-            elif llm_test == "reverser":
-                self.tests_with_harness = [self._async_test_reverser]
-            elif llm_test == "dict-gen":
-                self.tests_without_harness = [self._async_test_dict_gen]
-            elif llm_test == "dict-input-gen":
-                self.tests_with_harness = [self._async_test_dict_input_gen]
-        else:
-            self.tests_without_harness = [self._async_test_once]
-            self.tests_with_harness = [
-                self._async_test_executor,
-                self._async_test_given_fuzzer,
-                self._async_test_symcc,
-                # self._async_test_testlang_input_gen,
-            ]
+        self.tests_without_harness = [self._async_test_once]
+        self.tests_with_harness = [
+            self._async_test_executor,
+            self._async_test_given_fuzzer,
+        ]
         asyncio.run(self.__async_prepare_executor_all())
 
     def run_redis(self, harness):
@@ -144,9 +118,6 @@ class UniAFL(Module):
         fuzzer_opt = await self.__async_get_fuzzer_opt(harness.name)
         max_len = fuzzer_opt.get_max_len()
         config = {
-            "reverser_path": UniAFL.REVERSER,
-            "project_src_dir": self.crs.cp.cp_src_path,
-            "harness_src_path": harness.src_path,
             "given_fuzzer_dir": self.crs.cp.built_path,
             "corpus_dir": dummy_dir / "uniafl_corpus",
             "cov_dir": dummy_dir / "uniafl_cov",
@@ -183,9 +154,6 @@ class UniAFL(Module):
             env["JAZZER_MAX_NUM_COUNTERS"] = str(128 << 20)
             await util.async_run_cmd(cmd, env=env)
         elif self.crs.cp.language in ["c", "cpp", "c++", "rust", "go"]:
-            if os.environ.get("CREATE_CONF") != None:
-                self.log("Skip because create_conf_mod")
-                return
             redis_url = self.redis_url[harness.name]
             cmd = f"cfg_analyzer.py"
             cmd += f" --harness {harness.bin_path}"
@@ -272,14 +240,43 @@ class UniAFL(Module):
             log_file = hrunner.get_workdir(f"{self.name}/workdir") / "log"
             self.logH(hrunner, "Check logfile: " + str(log_file))
         self.logH(hrunner, "Run UniAFL")
+
+        # Spawn subprocess directly to get handle for per-harness shutdown
+        proc = await asyncio.create_subprocess_exec(
+            *[str(c) for c in cmd],
+            cwd=str(workdir),
+            env=env,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        # Store subprocess handle in CRS state for per-harness shutdown
+        harness_name = hrunner.harness.name
+        if harness_name in self.crs.harness_states:
+            self.crs.harness_states[harness_name]['subprocess'] = proc
+
+        # Launch support tasks
         watchdog = asyncio.create_task(self._async_run_watchdog(hrunner))
         cleaner = asyncio.create_task(self._async_run_cleaner(hrunner))
         seed_share = asyncio.create_task(self._async_run_seed_share(hrunner))
-        ret = await util.async_run_cmd(cmd, env=env)
-        self.logH(hrunner, str(ret))
-        await watchdog
-        await seed_share
-        await cleaner
+
+        # Wait for process to complete
+        out, err = await proc.communicate()
+
+        # Log result
+        self.logH(hrunner, f"UniAFL process exited: returncode={proc.returncode}")
+        if proc.returncode != 0 and err:
+            self.logH(hrunner, f"stderr: {err.decode('utf-8', errors='replace')}")
+
+        # Cleanup support tasks
+        for task in [watchdog, seed_share, cleaner]:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     async def _async_test_once(self) -> list[TestResult]:
         cmd = ["cargo", "test", "--release", "--bin", "uniafl"]
@@ -343,108 +340,6 @@ class UniAFL(Module):
         )
         return ret
 
-    async def _async_test_symcc(self, hrunner: HarnessRunner) -> TestResult:
-        if os.environ.get("TEST_SYMCC", "") == "":
-            return TestResult(True, "Skip testing symcc (concolic_input_gen)")
-        targets = os.environ.get("TEST_SYMCC", "").split(",")
-        if hrunner.harness.name not in targets:
-            return TestResult(True, "Skip testing symcc (concolic_input_gen)")
-        more_conf = {"input_gens": ["concolic_input_gen"]}
-        ret = await self._async_cargo_test(
-            hrunner,
-            "msa::tests::check_fuzzer",
-            "symcc (concolic_input_gen) Tests",
-            more_conf=more_conf,
-            timeout=450,
-        )
-        return ret
-
-    async def _async_test_mlla(self, hrunner: HarnessRunner) -> TestResult:
-        for key in ["LITELLM_KEY", "LITELLM_URL"]:
-            if os.environ.get(key) == None:
-                self.logH(hrunner, f"There is no {key} in env")
-                sys.exit(-1)
-        more_conf = {"input_gens": ["mlla"]}
-        ret = await self._async_cargo_test(
-            hrunner,
-            "msa::tests::check_fuzzer",
-            "MLLA Tests (not related to success of PoV Gen)",
-            more_conf=more_conf,
-            timeout=1200,
-        )
-        if not ret.is_passed:
-            log = hrunner.get_workdir(self.name) / "workdir/mlla/workdir/log"
-            if log.exists():
-                ret.msg += "\n" + "=" * 80 + "\n"
-                ret.msg += "MLLA Log\n"
-                ret.msg += log.read_text() + "\n"
-                ret.msg += "=" * 80 + "\n"
-        return ret
-
-    async def _async_test_dict_gen(self) -> TestResult:
-        for key in ["LITELLM_KEY", "LITELLM_URL"]:
-            if os.environ.get(key) == None:
-                self.log(f"There is no {key} in env")
-                sys.exit(-1)
-        cmd = "python3 /home/crs/dictgen/src/dictgen.py --test runner-docker"
-        cmd += " --path /src/repo --workdir /tmp"
-        cmd += " --test-dict /src/.aixcc/dict/test_info.json"
-        cmd = cmd.split(" ")
-        ret = await util.async_run_cmd(cmd)
-        return ret.to_test_result("Test dictionary generator", True)
-
-    async def _async_test_reverser(self, hrunner: HarnessRunner) -> TestResult:
-        for key in ["LITELLM_KEY", "LITELLM_URL"]:
-            if os.environ.get(key) == None:
-                self.logH(hrunner, f"There is no {key} in env")
-                sys.exit(-1)
-        more_conf = {"input_gens": ["testlang_input_gen"]}
-        ret = await self._async_cargo_test(
-            hrunner,
-            "msa::tests::check_fuzzer",
-            "Reverser Tests (not related to success of generating answer testlang)",
-            more_conf=more_conf,
-            timeout=1200,
-        )
-        testlang_dir = hrunner.get_workdir(self.name) / "workdir/harness-reverser"
-        for testlang in testlang_dir.glob("testlang_*.out"):
-            testlang_text = testlang.read_text()
-            ret.msg += "\n" + testlang_text
-        return ret
-
-    async def _async_test_dict_input_gen(self, hrunner: HarnessRunner) -> TestResult:
-        for key in ["LITELLM_KEY", "LITELLM_URL"]:
-            if os.environ.get(key) == None:
-                self.logH(hrunner, f"There is no {key} in env")
-                sys.exit(-1)
-        more_conf = {"input_gens": ["dict_input_gen"]}
-        ret = await self._async_cargo_test(
-            hrunner,
-            "msa::tests::check_fuzzer",
-            "Dict-based InputGen Tests (not related to success of PoV Gen)",
-            more_conf=more_conf,
-            timeout=600,
-        )
-        return ret
-
-    async def _async_test_testlang_input_gen(
-        self, hrunner: HarnessRunner
-    ) -> TestResult:
-        des = "Testlang-based InputGen Tests"
-        more_conf = {"input_gens": ["testlang_input_gen"]}
-        testlangs = hrunner.harness.get_answer_testlangs()
-        if len(testlangs) == 0:
-            return TestResult(True, f"Skip {des} because there is no answer testlang")
-        given_env = {"ANSWER_TESTLANG": testlangs[0]}
-        ret = await self._async_cargo_test(
-            hrunner,
-            "msa::tests::check_fuzzer",
-            des,
-            more_conf=more_conf,
-            given_env=given_env,
-        )
-        return ret
-
     async def __prepare_test_config(self, hrunner, more={}):
         config = {}
         workdir = hrunner.get_workdir(self.name) / "test"
@@ -459,7 +354,6 @@ class UniAFL(Module):
             await util.async_cp(seed, hrunner.others_corpus_dir / seed.name)
         for k, v in more.items():
             config[k] = v
-        config["mlla_iter_cnt"] = 2
         return await self.__prepare_config(hrunner, config)
 
     async def __prepare_config(self, hrunner, more={}):
@@ -467,12 +361,8 @@ class UniAFL(Module):
         fuzzer_opt = await self.__async_get_fuzzer_opt(hrunner.harness.name)
         max_len = fuzzer_opt.get_max_len()
         config = {
-            "reverser_path": UniAFL.REVERSER,
-            "dictgen_path": UniAFL.DICTGEN_PATH,
-            "project_src_dir": self.crs.cp.cp_src_path,
             "harness_name": hrunner.harness.name,
             "harness_path": hrunner.harness.bin_path,
-            "harness_src_path": hrunner.harness.src_path,
             "given_fuzzer_dir": self.crs.cp.built_path,
             "corpus_dir": hrunner.uniafl_corpus_dir,
             "cov_dir": hrunner.uniafl_cov_dir,
@@ -484,13 +374,11 @@ class UniAFL(Module):
             "redis_url": self.redis_url[hrunner.harness.name],
             "ms_per_exec": hrunner.ms_per_exec,
             "max_len": max_len,
-            "mlla_iter_cnt": 30,
-            "mlla_interval": 30,  # seconds
             "allow_timeout_bug": fuzzer_opt.is_timeout_bug_allowed(),
         }
-        if UniAFL.DIFF_PATH.exists():
+        if UniAFL.DIFF_PATH is not None and UniAFL.DIFF_PATH.exists():
             config["diff_path"] = str(UniAFL.DIFF_PATH)
-            process_diff_path = Path("/src/ref.diff.json")
+            process_diff_path = UniAFL.DIFF_PATH.with_suffix(".diff.json")
             await util.async_run_cmd(
                 ["extract_from_diff.py", UniAFL.DIFF_PATH, process_diff_path]
             )
@@ -500,26 +388,6 @@ class UniAFL(Module):
         if dic != None:
             config["given_dict_path"] = dic
             self.logH(hrunner, f"Pass the given dict in {dic} to UniAFL")
-        if (
-            self.crs.cp.language == "c"
-            or self.crs.cp.language == "c++"
-            or self.crs.cp.language == "cpp"
-        ):
-            concolic_harness_path = (
-                Path(hrunner.harness.bin_path.parent)
-                / f"{hrunner.harness.bin_path.name}-symcc"
-            )
-            concolic_config = {
-                "symqemu": "/symcc/qemu-x86_64",
-                "symqemu_harness": str(hrunner.harness.bin_path),
-                "llvm_symbolizer": "/out/llvm-symbolizer",
-                "workdir": str(hrunner.get_workdir(f"{workdir.name}/concolic-workdir")),
-                "executor_timeout_ms": 1000 * 30,
-                "python": "/home/crs/constraint-gen/env/bin/python3",
-                "resolve_script": "resolve",
-                "harness": str(concolic_harness_path)
-            }
-            config["concolic"] = concolic_config
         if "input_gens" in self.crs.config.others:
             config["input_gens"] = self.crs.config.others["input_gens"]
         for k, v in more.items():
@@ -544,24 +412,18 @@ class AnyHR(HarnessRunner):
     async def async_run(self):
         if os.environ.get("COV_RUNNER", False):
             return await self._async_run_cov_runner()
-        # Support direct output to mounted directories (e.g., /artifacts/)
-        if os.environ.get("CRS_CORPUS_DIR"):
-            # self.uniafl_corpus_dir = Path(os.environ["CRS_CORPUS_DIR"]) / self.harness.name
-            self.uniafl_corpus_dir = Path(os.environ["CRS_CORPUS_DIR"])
-            os.makedirs(self.uniafl_corpus_dir, exist_ok=True)
-        else:
-            self.uniafl_corpus_dir = self.get_workdir("uniafl_corpus")
-        self.uniafl_cov_dir = self.get_workdir("uniafl_cov")
+        # Use CRSPaths for direct output to /artifacts
+        self.uniafl_corpus_dir = CRSPaths.get_corpus_dir() / self.harness.name
+        self.uniafl_cov_dir = CRSPaths.get_crs_data_dir() / "coverage" / self.harness.name
+        self.pov_dir = CRSPaths.get_pov_dir() / self.harness.name
+        # Create directories
+        os.makedirs(self.uniafl_corpus_dir, exist_ok=True)
+        os.makedirs(self.uniafl_cov_dir, exist_ok=True)
+        os.makedirs(self.pov_dir, exist_ok=True)
         self.uniafl_config_path = None
         self.others_corpus_dir = self.get_workdir("others_corpus")
         await self.__unzip_given_corpus(self.others_corpus_dir)
         await self.__copy_corpus_from_other_cp(self.others_corpus_dir)
-        if os.environ.get("CRS_POV_DIR"):
-            # self.pov_dir = Path(os.environ["CRS_POV_DIR"]) / self.harness.name
-            self.pov_dir = Path(os.environ["CRS_POV_DIR"])
-            os.makedirs(self.pov_dir, exist_ok=True)
-        else:
-            self.pov_dir = self.get_workdir("pov")
         self.ms_per_exec = await self.__async_get_ms_per_exec()
         await self.crs.uniafl.async_run(self)
 
@@ -576,9 +438,8 @@ class AnyHR(HarnessRunner):
         seed_share_dir = Path(get_seed_share_dir())
         seed_share_dir_name = seed_share_dir.name
         rootdir = seed_share_dir.parent.parent
-        crs_name = os.environ.get('CRS_NAME', 'crs-multilang')
         candidates = list(
-            rootdir.glob(f"*/{seed_share_dir_name}/{crs_name}/{self.harness.name}")
+            rootdir.glob(f"*/{seed_share_dir_name}/crs-multilang/{self.harness.name}")
         )
         if len(candidates) == 0:
             self.log(f"No reusable corpus found for {self.harness.name}")
@@ -647,163 +508,16 @@ class AnyCRS(CRS):
         await self.async_prepare_modules()
 
     async def _async_watchdog(self):
-        await self.async_evaluate()
-
-    async def async_evaluate(self):
-        eval_sec = int(os.environ.get("EVAL_SEC", 0))
-        if eval_sec == 0:
-            return
-        # wait until uniafl is ready
-        self.log("[Eval] Wait until all modules are prepared")
-        for module in self.modules:
-            await module.async_wait_prepared()
-            self.log(f"[Eval] {module.__class__.__name__} is prepared")
-        self.log("[Eval] Start evaluation")
-        start_time = int(util.get_env("START_TIME", must_have=True))
-        end_time = start_time + eval_sec
-        while int(time.time()) < end_time:
-            if crs.found_all_answer_pov:
-                break
-            await asyncio.sleep(5)
-        eval_time = int(time.time()) - start_time
-        await self.save_eval_result(eval_time)
-        tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-        [task.cancel() for task in tasks]
-        await asyncio.gather(*tasks)
-
-    async def save_concolic_eval_result(self, hrunner, result_dir: Path):
-        workdir = hrunner.get_workdir("uniafl")
-        concolic_workdir = hrunner.get_workdir(f"{workdir.name}/concolic-workdir")
-        if not concolic_workdir.exists():
-            self.log(f"[Eval] No concolic-workdir created for {hrunner.harness.name}")
-            return
-        self.log(f"[Eval] Save {concolic_workdir} for {hrunner.harness.name}")
-        eval_concolic_dir = result_dir / "concolic"
-        os.makedirs(eval_concolic_dir, exist_ok=True)
-        dest_dir = eval_concolic_dir / hrunner.harness.name
-        await util.async_cp(concolic_workdir, dest_dir)
-
-    async def save_input_gen_logs(self, hrunner, result_dir: Path):
-        workdir = hrunner.get_workdir("uniafl")
-        for file in glob.glob(f"{workdir}/*.log"):
-            file = Path(file)
-            dest_dir = result_dir / f"input-gen-logs-{hrunner.harness.name}"
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            self.log(f"[Eval] Save input_gen log file {file} into {dest_dir}")
-            await util.async_cp(file, dest_dir)
-
-    async def save_workdir_result(self):
-        if not is_eval():
-            return
-
-        if os.environ.get("SAVE_WORKDIR_RESULT") != "True":
-            return
-
-        # workdir_result_dir = Path("/artifacts/workdir_result")
-        workdir_result_dir = Path("/artifacts/crs-data/workdir_result")
-        await util.async_rm(workdir_result_dir)
-        os.makedirs(workdir_result_dir, exist_ok=True)
-
-        self.log(f"[Eval] Save workdir into {workdir_result_dir}")
-
-        for hrunner in self.hrunners:
-            harness_workdir = hrunner.get_workdir("uniafl") / ".."
-            if harness_workdir.exists():
-                # dest_dir = workdir_result_dir / hrunner.harness.name
-                dest_dir = workdir_result_dir
-                self.log(f"[Eval] Save workdir {harness_workdir} to {dest_dir}")
-                await util.async_cp(harness_workdir, dest_dir)
-            else:
-                self.log(f"[Eval] No workdir found for {hrunner.harness.name}")
-
-    async def save_eval_result(self, eval_time):
-        # result_dir = Path("/artifacts/eval_result")
-        result_dir = Path("/artifacts/crs-data/eval_result")
-        await util.async_rm(result_dir)
-        self.log(f"[Eval] Save result into {result_dir}")
-
-        for hrunner in self.hrunners:
-            await self.save_input_gen_logs(hrunner, result_dir)
-            self.log(f"[Eval] Save result of {hrunner.harness.name}")
-            if hrunner.uniafl_config_path:
-                db = FuzzDB(hrunner.uniafl_config_path)
-                db.save_eval_result(result_dir, eval_time)
-                await self.save_concolic_eval_result(hrunner, result_dir)
-            else:
-                self.log(f"[Eval] No config file for {hrunner.__class__.__name__}")
-            self.log(f"[Eval] Done")
-
-        await self.save_workdir_result()
+        """
+        Continuous mode watchdog - runs indefinitely until manual stop.
+        """
+        self.log("[Watchdog] Continuous mode: Running indefinitely")
+        # Just wait forever - fuzzing continues until manual stop
+        while True:
+            await asyncio.sleep(3600)
 
 
 ################################################################################
-########## For Eval
-################################################################################
-
-
-def is_eval() -> bool:
-    return os.environ.get("EVAL_SEC") is not None
-
-
-class EventHandler(pyinotify.ProcessEvent):
-    def __init__(self, db, crs):
-        self.crs = crs
-        self.db = db
-
-    def process_IN_MODIFY(self, event):
-        check_all_pov_found(self.db, self.crs)
-
-
-def get_pov_logs(crs):
-    crs.answer_pov_logs = None
-    crs.found_all_answer_pov = False
-    if not is_eval():
-        return
-    ret = util.run_cmd(["get_answer_pov_log.py"])
-    logs = json.loads(ret.stdout)
-    for harness in logs:
-        for log in logs[harness]:
-            crs.log(f"{harness} crash log by executing answer blob:\n{log}")
-    crs.answer_pov_logs = logs
-
-
-def check_all_pov_found(db, crs):
-    db = db.read_bytes()
-    for logs in crs.answer_pov_logs.values():
-        for log in logs:
-            if bytes(log, "utf-8") not in db:
-                return False
-    crs.found_all_answer_pov = True
-    crs.log("Our CRS found all answer povs!")
-    return True
-
-
-def register_submit_db_watchdog(crs):
-    get_pov_logs(crs)
-    db = Path(os.environ.get("CRS_WORKDIR", "/crs-workdir/")) / "submit/submit.db"
-    db.parent.mkdir(parents=True, exist_ok=True)
-    db.touch()
-    wm = pyinotify.WatchManager()
-    notifier = pyinotify.Notifier(wm, EventHandler(db, crs))
-    wm.add_watch(str(db), pyinotify.IN_CREATE | pyinotify.IN_MODIFY)
-    thread = threading.Thread(target=lambda x: x.loop(), args=(notifier,), daemon=True)
-    thread.start()
-
-
-################################################################################
-
-
-def wait_redis(redis_url):
-    r = Redis.from_url(redis_url)
-    while True:
-        try:
-            if r.ping():
-                break
-            time.sleep(1)
-        except:
-            pass
-
-
 def handle_no_fdp(conf, cp):
     if "no_FDP" in conf.others:
         if conf.target_harnesses:
@@ -812,120 +526,6 @@ def handle_no_fdp(conf, cp):
             targets = cp.get_harnesses().keys()
         targets = list(filter(lambda x: not x.endswith("FDP"), targets))
         conf.target_harnesses = targets
-
-
-def name_filter(target, names):
-    for postfix in ["-symcc"]:
-        if target.endswith(postfix) and target[: -len(postfix)] in names:
-            return False
-    return True
-
-
-def create_conf(cp, conf_path, answer_path_if_exist):
-    dummy = Path("/tmp/dummy_for_conf")
-    dummy.write_text("\n")
-    KEY = "fuzzerTestOneInput"
-    if cp.language == "jvm":
-        KEY = "fuzzerTestOneInput"
-    else:
-        KEY = "LLVMFuzzerTestOneInput"
-
-    def normalize_src(src):
-        for prefix, key in [("/src/repo", "$REPO"), ("/src", "$PROJECT")]:
-            if src.startswith(prefix):
-                return key + src[len(prefix) :]
-        return src
-
-    conf = {}
-
-    async def get_key_addr(harness):
-        cmd = f"nm {harness.bin_path} | grep LLVMFuzzerTestOneInput"
-        ret = await util.async_run_cmd(["/bin/bash", "-c", cmd])
-        try:
-            return int(ret.stdout.decode("utf-8").split(" ")[0], 16)
-        except:
-            return None
-
-    async def llvm_symbolzer_based(name, harness):
-        harness.cp.log("try llvm_symbolzer_based")
-        key_addr = await get_key_addr(harness)
-        if key_addr == None:
-            return
-        symbolizer = LLVMSymbolizer(str(harness.bin_path), "/out/llvm-symbolizer")
-        ret = symbolizer.run_llvm_symbolizer_addr(key_addr)
-        conf[name] = normalize_src(ret.src_file)
-
-    async def get_dummy_cov(harness, idx):
-        dummy_seed = Path(f"/tmp/dummy_for_conf_{idx}")
-        dummy_seed.write_text("\n")
-        for i in range(2):
-            env = os.environ.copy()
-            env["CUR_WORKER"] = str(idx + i)
-            cmd = f"timeout 5m run_once {harness.name} {dummy_seed}"
-            ret = await util.async_run_cmd(["/bin/bash", "-c", cmd], env=env)
-            cov_file = Path(str(dummy_seed) + ".cov")
-            if cov_file.exists():
-                return json.loads(cov_file.read_text())
-        return None
-
-    async def update_conf(name, harness, idx):
-        if harness.cp.language != "jvm":
-            return await llvm_symbolzer_based(name, harness)
-        covs = await get_dummy_cov(harness, idx)
-        if covs == None or len(covs) == 0:
-            for key in ["/src/repo/", "/src/"]:
-                key = key + f"**/{harness.name}.java"
-                cands = glob.glob(key, recursive=True)
-                if len(cands) > 0:
-                    conf[name] = normalize_src(cands[0])
-                    break
-            return
-        for func in covs:
-            if KEY in func:
-                src = covs[func]["src"]
-                conf[name] = normalize_src(src)
-                break
-
-    async def update_all(cp):
-        jobs = []
-        idx = 0
-        for name, harness in cp.harnesses.items():
-            jobs.append(update_conf(name, harness, idx))
-            idx += 1
-        await asyncio.gather(*jobs)
-
-    asyncio.run(update_all(cp))
-
-    to_yaml = []
-    with open(conf_path, "w") as f:
-        for name in conf:
-            to_yaml.append({"name": name, "path": conf[name]})
-        yaml.dump({"harness_files": to_yaml}, f)
-    cp.log("Created Conf>\n" + conf_path.read_text())
-
-    if os.getenv("CRS_TEST") == "True" and answer_path_if_exist.exists():
-        with open(answer_path_if_exist, "r") as f:
-            answer_conf = yaml.safe_load(f)["harness_files"]
-            for answer in answer_conf:
-                name = answer["name"]
-                path = answer["path"]
-                abs_path = Path(
-                    path.replace("$REPO", "/src/repo").replace("$PROJECT", "/src")
-                )
-                assert abs_path.exists(), f"Path {path} ({abs_path}) does not exist"
-                assert name in conf, f"{name} not in conf"
-                ours = Path(
-                    str(conf[name])
-                    .replace("$REPO", "/src/repo")
-                    .replace("$PROJECT", "/src")
-                )
-                assert ours.exists(), f"Our answer {ours} does not exist"
-                assert ours.read_text() == abs_path.read_text()
-            cp.log("Same as the answer conf!")
-
-    cp.log("DONE")
-
-    return conf
 
 
 def add_env(key, value, replace=None):
@@ -943,12 +543,29 @@ def add_env(key, value, replace=None):
     util.set_env(key, opt)
 
 
-CONF_PATH = Path("/src/.aixcc/config.yaml")
-TMP_CONF = Path("/src/.aixcc/config.yaml.tmp")
+def log_oss_crs_environment():
+    """Log OSS-CRS environment variables if running in OSS-CRS mode."""
+    if CRSPaths.is_oss_crs_mode():
+        logging.info("=" * 60)
+        logging.info("OSS-CRS MODE DETECTED")
+        logging.info("=" * 60)
+        logging.info(f"  CRS_NAME: {os.environ.get('CRS_NAME', 'N/A')}")
+        logging.info(f"  CRS_TARGET: {os.environ.get('CRS_TARGET', 'N/A')}")
+        logging.info(f"  CPUs: {os.cpu_count()}")
+        logging.info(f"  TARGET_HARNESS: {os.environ.get('TARGET_HARNESS', 'N/A')}")
+        logging.info(f"  Output: {CRSPaths.get_pov_dir()}")
+        if CRSPaths.get_diff_path():
+            logging.info(f"  Delta mode: {CRSPaths.get_diff_path()}")
+        if CRSPaths.get_seed_share_dir():
+            logging.info(f"  Ensemble mode: {CRSPaths.get_seed_share_dir()}")
+        logging.info("=" * 60)
+
+
 if __name__ == "__main__":
-    install_otel_logger(action_name="main")
-    conf = Config(0, 1).load("/crs.config")
-    shm_size = get_available_cpus() * 4
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    log_oss_crs_environment()
+    conf = Config()
+    shm_size = os.cpu_count() * 4
     os.system(f"mount -o remount,size={shm_size}G /dev/shm")
     os.system("touch /dev/shm/aa")
     shm = Path("/dev/shm")
@@ -959,39 +576,8 @@ if __name__ == "__main__":
             os.system(f"rm -rf {name}")
 
     add_env("ASAN_OPTIONS", "detect_leaks=0", "detect_leaks=1")
-    conf_create_mode = os.environ.get("CREATE_CONF", False) != False
-    if conf_create_mode:
-        if CONF_PATH.exists():
-            CONF_PATH.rename(TMP_CONF)
     cp = init_cp_in_runner()
-
-    if conf_create_mode:
-        names = list(cp.harnesses.keys())
-        for name in names:
-            if not name_filter(name, names):
-                del cp.harnesses[name]
-    else:
-        handle_no_fdp(conf, cp)
+    handle_no_fdp(conf, cp)
 
     crs = AnyCRS("CRS-Multilang", AnyHR, conf, cp)
-    if conf_create_mode:
-        output_path = Path(os.environ.get("CREATE_CONF"))
-        create_conf(cp, output_path, TMP_CONF)
-        exit(0)
-    redis_url = os.environ.get("CODE_INDEXER_REDIS_URL")
-    if redis_url:
-        crs.log(f"Code Indexer REDIS URL: {redis_url}")
-        wait_redis(redis_url)
-        crs.log(f"Code Indexer REDIS is available")
-    if is_eval():
-        register_submit_db_watchdog(crs)
-    # if os.environ.get("RUN_MLLA", False):
-    #     exit(0)
-    start_time = int(time.time())
-    crs.run(True)
-
-    # Always save eval result after run completes (eval mode already saves during run)
-    # Skip if CRS_SKIP_SAVE is set (used by oss-crs to avoid redundant saves)
-    if not is_eval() and os.environ.get("CRS_SKIP_SAVE") != "True":
-        eval_time = int(time.time()) - start_time
-        asyncio.run(crs.save_eval_result(eval_time))
+    crs.run()

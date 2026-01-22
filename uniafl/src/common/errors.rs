@@ -6,14 +6,6 @@ use serde_cbor;
 use serde_json;
 use std::{collections::TryReserveError, fmt, io, path::PathBuf, sync::Arc, time::Duration};
 
-#[macro_export]
-macro_rules! symbolic_computation_tree_error {
-    ($($arg:tt)*) => {
-        // Invokes the associated constructor, which captures a backtrace.
-        $crate::common::Error::symbolic_computation_tree_error(format!($($arg)*))
-    };
-}
-
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
@@ -46,9 +38,6 @@ pub enum ErrorKind {
     InvalidData {
         reason: String,
     },
-    SymbolicComputationTreeError {
-        inner: String,
-    },
     LibAFLError {
         inner: libafl::Error,
     },
@@ -56,17 +45,9 @@ pub enum ErrorKind {
         inner: object::Error,
     },
     TryReserveError(TryReserveError),
-    TestLangError {
-        inner: String,
-    },
-    CustomGenError(customgen::CustomGenError),
-    FuzzedDataProviderError(libfdp::EncoderError),
     TimeoutError {
         cmd: String,
         timeout: Duration,
-    },
-    SelfCorrectionLogicError {
-        reason: String,
     },
     CGroupsError(cgroups_rs::error::Error),
     Other(String),
@@ -74,9 +55,7 @@ pub enum ErrorKind {
 
 #[derive(Debug)]
 pub enum ExecutableType {
-    SymCCHarness,
-    SymQEMUHarness,
-    SymQEMU,
+    Harness,
 }
 
 impl Error {
@@ -125,12 +104,6 @@ impl Error {
         })
     }
 
-    pub fn testlang_error<T: AsRef<str>>(reason: T) -> Self {
-        Error::new(ErrorKind::TestLangError {
-            inner: reason.as_ref().to_owned(),
-        })
-    }
-
     pub fn timeout_error(cmd: &str, timeout: Duration) -> Self {
         Error::new(ErrorKind::TimeoutError {
             cmd: cmd.to_owned(),
@@ -138,19 +111,11 @@ impl Error {
         })
     }
 
-    pub fn symbolic_computation_tree_error<T: AsRef<str>>(reason: T) -> Self {
-        Error::new(ErrorKind::SymbolicComputationTreeError {
-            inner: reason.as_ref().to_owned(),
-        })
-    }
-
-    pub fn self_correction_logic_error<T: AsRef<str>>(reason: T) -> Self {
-        Error::new(ErrorKind::SelfCorrectionLogicError {
-            reason: reason.as_ref().to_owned(),
-        })
-    }
-
     pub fn other<T: AsRef<str>>(reason: T) -> Self {
+        Error::new(ErrorKind::Other(reason.as_ref().to_owned()))
+    }
+
+    pub fn empty<T: AsRef<str>>(reason: T) -> Self {
         Error::new(ErrorKind::Other(reason.as_ref().to_owned()))
     }
 }
@@ -231,26 +196,6 @@ impl From<std::num::ParseIntError> for Error {
     }
 }
 
-impl From<libfdp::EncoderError> for Error {
-    fn from(err: libfdp::EncoderError) -> Self {
-        Error::new(ErrorKind::FuzzedDataProviderError(err))
-    }
-}
-
-impl From<customgen::CustomGenError> for Error {
-    fn from(err: customgen::CustomGenError) -> Self {
-        Error::new(ErrorKind::CustomGenError(err))
-    }
-}
-
-impl From<testlang::TestLangError> for Error {
-    fn from(err: testlang::TestLangError) -> Self {
-        Error::new(ErrorKind::TestLangError {
-            inner: err.to_string(),
-        })
-    }
-}
-
 impl From<Errno> for Error {
     fn from(err: Errno) -> Self {
         Error::new(ErrorKind::IOError(io::Error::from_raw_os_error(err as i32)))
@@ -319,19 +264,8 @@ impl fmt::Display for Error {
             ErrorKind::LibAFLError { inner } => write!(f, "LibAFL error: {}", inner)?,
             ErrorKind::ElfError { inner } => write!(f, "ELF error: {}", inner)?,
             ErrorKind::TryReserveError(err) => write!(f, "TryReserve error: {}", err)?,
-            ErrorKind::TestLangError { inner } => write!(f, "TestLang error: {}", inner)?,
-            ErrorKind::CustomGenError(err) => write!(f, "CustomGen error: {}", err)?,
             ErrorKind::TimeoutError { cmd, timeout } => {
                 write!(f, "Execution of \"{}\" timed out after {:?}", cmd, timeout)?
-            }
-            ErrorKind::FuzzedDataProviderError(err) => {
-                write!(f, "FuzzedDataProvider error: {}", err)?
-            }
-            ErrorKind::SymbolicComputationTreeError { inner } => {
-                write!(f, "Symbolic computation tree error: {}", inner)?
-            }
-            ErrorKind::SelfCorrectionLogicError { reason } => {
-                write!(f, "Self-correction logic error: {}", reason)?
             }
             ErrorKind::CGroupsError(err) => write!(f, "cgroups error: {}", err)?,
             ErrorKind::Other(msg) => write!(f, "{}", msg)?,

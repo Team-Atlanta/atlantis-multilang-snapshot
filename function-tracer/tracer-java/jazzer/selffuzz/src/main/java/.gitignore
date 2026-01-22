@@ -1,2 +1,0 @@
-# this exists to ensure this otherwise empty directory is included in git because our CI will fail if there's no
-# directory here

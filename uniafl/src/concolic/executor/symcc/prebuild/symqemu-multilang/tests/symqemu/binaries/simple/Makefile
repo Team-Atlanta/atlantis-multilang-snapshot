@@ -1,4 +1,0 @@
-binary:
-
-clean:
-	rm binary

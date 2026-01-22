@@ -1,8 +1,0 @@
-java_library(
-    name = "annotation",
-    srcs = glob(["*.java"]),
-    visibility = ["//visibility:public"],
-    deps = [
-        "//src/main/java/com/code_intelligence/jazzer/mutation/utils",
-    ],
-)

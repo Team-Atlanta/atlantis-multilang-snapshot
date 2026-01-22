@@ -2,7 +2,6 @@ use clap::Parser;
 use std::path::PathBuf;
 
 mod common;
-mod concolic;
 mod executor;
 mod input_gen;
 mod msa;

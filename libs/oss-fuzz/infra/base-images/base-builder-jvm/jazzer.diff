@@ -481,7 +481,7 @@ index 36c6cea3..92b624d5 100644
              "${it.name}: ${it.collectionCount} collections took ${it.collectionTime}ms"
          },
 diff --git a/src/main/java/com/code_intelligence/jazzer/driver/FuzzTargetRunner.java b/src/main/java/com/code_intelligence/jazzer/driver/FuzzTargetRunner.java
-index 112c4a2d..09377e0a 100644
+index 112c4a2d..4c5b17ad 100644
 --- a/src/main/java/com/code_intelligence/jazzer/driver/FuzzTargetRunner.java
 +++ b/src/main/java/com/code_intelligence/jazzer/driver/FuzzTargetRunner.java
 @@ -36,6 +36,8 @@ import com.code_intelligence.jazzer.utils.UnsafeProvider;
@@ -528,10 +528,12 @@ index 112c4a2d..09377e0a 100644
      }
  
      if (!continueFuzzing) {
-@@ -532,6 +537,23 @@ public final class FuzzTargetRunner {
+@@ -531,7 +536,24 @@ public final class FuzzTargetRunner {
+   // Accessed by fuzz_target_runner.cpp.
    @SuppressWarnings("unused")
    private static void dumpAllStackTraces() {
-     ExceptionUtils.dumpAllStackTraces();
+-    ExceptionUtils.dumpAllStackTraces();
++    //ExceptionUtils.dumpAllStackTraces();
 +    Map<Thread, StackTraceElement[]> allStackTraces = Thread.getAllStackTraces();
 +    Thread mainThread = null;
 +

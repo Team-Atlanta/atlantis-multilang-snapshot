@@ -17,7 +17,7 @@ use walkdir::WalkDir;
 
 use super::exec_runner::ExecRunner;
 use crate::{
-    common::utils,
+    common::{challenge::sha1hash, utils},
     msa::{
         manager::{CovAddr, ExecMode, MsaInput, MsaManager},
         state::UniState,
@@ -62,6 +62,16 @@ pub struct Executor {
     pub coverage_harness_path: String,
     pub coverage_binary_ready: bool,
 }
+
+macro_rules! get_subarr {
+    ($cur: expr, $key: expr) => {{
+        let cur = $cur;
+        let from = utils::find_subarr(cur, $key)?;
+        &cur[from + $key.len()..]
+    }};
+}
+const DEFAULT_TIMEOUT_LOG: &[u8] = b"EMPTY TIMEOUT LOG";
+const EMPTY_CRASH_CALLSTACK: &[u8] = b"EMPTY_CRASH_CALLSTACK";
 
 impl Executor {
     pub fn new(
@@ -211,7 +221,7 @@ impl Executor {
 
     pub fn save_crash_log(&self, fpath: &PathBuf, crash_log: &[u8]) {
         if let Some(fname) = fpath.file_name().and_then(|n| n.to_str()) {
-            let crash_log_fname = format!(".{}.crash_log", fname);
+            let crash_log_fname = format!("{}.crash_log", fname);
             let mut crash_log_fpath = fpath.clone();
             crash_log_fpath.set_file_name(crash_log_fname);
 
@@ -223,7 +233,7 @@ impl Executor {
 
     pub fn save_call_stack(&self, fpath: &PathBuf, crash_log: &[u8]) {
         if let Some(fname) = fpath.file_name().and_then(|n| n.to_str()) {
-            let callstack_fname = format!(".{}.callstack", fname);
+            let callstack_fname = format!("{}.callstack", fname);
             let mut callstack_fpath = fpath.clone();
             callstack_fpath.set_file_name(callstack_fname);
 
@@ -294,8 +304,13 @@ impl Executor {
                 }
             }
         }
-
-        result.join("\n")
+        if result.is_empty() {
+            std::str::from_utf8(EMPTY_CRASH_CALLSTACK)
+                .unwrap()
+                .to_string()
+        } else {
+            result.join("\n")
+        }
     }
 
     fn read_coverage(&self, fname: &str) -> Result<Vec<u8>, Error> {
@@ -338,7 +353,7 @@ impl Executor {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let fut = async move {
             let mut buf = vec![0; 5]; // "DONE\n"
-            match timeout(Duration::from_secs(600), async {
+            match timeout(Duration::from_secs(3600), async {
                 stdout.read_exact(&mut buf)
             })
             .await
@@ -479,6 +494,9 @@ impl Executor {
     }
 
     fn filter_address_in_jazzer_log(log: Vec<u8>) -> Vec<u8> {
+        if log == DEFAULT_TIMEOUT_LOG {
+            return log;
+        }
         let mut ret = Vec::new();
         for line in log.split(|&b| b == b'\n') {
             if utils::find_subarr(line, b"0x").is_none() {
@@ -490,9 +508,8 @@ impl Executor {
     }
 
     pub fn parse_libfuzzer_crash_log(log: &[u8], parse_err_head: bool) -> Option<Vec<u8>> {
-        if let Some(dedup_tokens) = Self::parse_dedup_tokens(log) {
-            return Some(dedup_tokens);
-        }
+        // Skip DEDUP_TOKEN - too coarse-grained (function names only), use call stack instead
+        // which includes file:line info to distinguish multiple vulns in the same function
         let cur = log;
         let from = if parse_err_head {
             0
@@ -527,10 +544,7 @@ impl Executor {
     }
 
     fn parse_jazzer_crash_log(log: &[u8]) -> Option<Vec<u8>> {
-        let cur = log;
-        let key = "== Java Exception: ".as_bytes();
-        let from = utils::find_subarr(cur, key)?;
-        let cur = &cur[from + key.len()..];
+        let cur = get_subarr!(log, b"== Java Exception:");
         let from = utils::find_subarr(cur, b"\tat")?;
         let cur = &cur[from..];
         let cur = if let Some(last) = utils::find_subarr(cur, b"Caused by:") {
@@ -545,15 +559,21 @@ impl Executor {
         }
     }
 
-    fn parse_jazzer_timeout_log<'a>(log: &'a [u8]) -> Option<Vec<u8>> {
-        let cur = log;
-        let key = "Thread[main".as_bytes();
-        let from = utils::find_subarr(cur, key)?;
-        let cur = &cur[from + key.len()..];
-        let from = utils::find_subarr(cur, b"\n")?;
-        let cur = &cur[from + 1..];
+    fn parse_jazzer_timeout_stack<'a>(log: &'a [u8]) -> Option<Vec<u8>> {
+        let cur = get_subarr!(log, b"Thread[main");
+        let cur = get_subarr!(cur, b"\n");
         let last = utils::find_subarr(cur, "\n\n".as_bytes())?;
         Some(Self::filter_address_in_jazzer_log(cur[..last].to_vec()))
+    }
+
+    fn parse_jazzer_timeout_log<'a>(log: &'a [u8]) -> Option<Vec<u8>> {
+        Self::parse_jazzer_timeout_stack(log).or_else(|| {
+            if utils::find_subarr(log, b"ERROR: libFuzzer: timeout after").is_some() {
+                Some(DEFAULT_TIMEOUT_LOG.to_vec())
+            } else {
+                None
+            }
+        })
     }
 
     pub fn run_pov(&self, pov: &[u8]) -> Option<(Vec<u8>, Vec<u8>)> {
@@ -592,7 +612,8 @@ impl Executor {
         let parsed = Self::parse_libfuzzer_crash_log(log, true)
             .or_else(|| Self::parse_jazzer_crash_log(log))
             .or_else(|| Self::parse_jazzer_timeout_log(log))
-            .map(|ret| ret.to_vec())?;
+            .map(|ret| ret.to_vec())
+            .unwrap_or(EMPTY_CRASH_CALLSTACK.to_vec());
 
         Some((parsed, log.to_vec()))
     }
@@ -603,12 +624,32 @@ impl Executor {
                 if let Some(log) = msa_input.get_crash_log() {
                     let log =
                         Self::parse_libfuzzer_crash_log(log, is_timeout).unwrap_or(Vec::new());
-                    msa_input.set_crash_log(&log);
+                    if log.is_empty() {
+                        msa_input.set_crash_log(EMPTY_CRASH_CALLSTACK);
+                    } else {
+                        msa_input.set_crash_log(&log);
+                    }
+                } else {
+                    msa_input.set_crash_log(EMPTY_CRASH_CALLSTACK);
                 }
             }
             Language::Jvm => {
                 if let Some(log) = msa_input.get_crash_log() {
                     msa_input.set_crash_log(&Self::filter_address_in_jazzer_log(log.to_vec()));
+                } else if is_timeout {
+                    // Use coverage hash for timeout deduplication instead of merging all timeouts
+                    let cov = msa_input.get_cov();
+                    let cov_bytes: &[u8] = unsafe {
+                        std::slice::from_raw_parts(
+                            cov.as_ptr() as *const u8,
+                            cov.len() * std::mem::size_of::<CovAddr>(),
+                        )
+                    };
+                    let cov_hash = sha1hash(cov_bytes);
+                    let timeout_log = format!("TIMEOUT_COV_HASH:{}", cov_hash);
+                    msa_input.set_crash_log(timeout_log.as_bytes());
+                } else {
+                    msa_input.set_crash_log(EMPTY_CRASH_CALLSTACK);
                 }
             }
             _ => (),

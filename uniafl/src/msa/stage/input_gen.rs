@@ -4,10 +4,7 @@ use std::{borrow::Cow, path::PathBuf, sync::Arc};
 
 use crate::{
     executor::Executor,
-    input_gen::{
-        client::InputGenClient, concolic_service::ConcolicPool, dict::service::DictPool,
-        server::InputGenPool, testlang::service::pool::TestLangPool, InputGenResult,
-    },
+    input_gen::{client::InputGenClient, server::InputGenPool, InputGenResult},
     msa::{
         manager::{ExecMode, MsaManager},
         stage::MsaStage,
@@ -24,20 +21,9 @@ impl InputGenStage {
         Self { input_gen_client }
     }
 
-    fn stage_worker_range(worker_cnt: u32, stage_name: &str) -> (u32, u32) {
-        if worker_cnt < 4 {
-            return (0, worker_cnt);
-        }
-        let block = worker_cnt / 4;
-        if stage_name == TestLangPool::name() {
-            (0, block)
-        } else if stage_name == ConcolicPool::name() {
-            (block, 2 * block)
-        } else if stage_name == DictPool::name() {
-            (2 * block, 3 * block)
-        } else {
-            (0, worker_cnt)
-        }
+    fn stage_worker_range(worker_cnt: u32, _stage_name: &str) -> (u32, u32) {
+        // All workers can handle any stage now (removed ConcolicPool, TestLangPool, DictPool)
+        (0, worker_cnt)
     }
 
     pub fn stage_filter(worker_cnt: u32, worker_idx: u32, stage_name: &str) -> bool {

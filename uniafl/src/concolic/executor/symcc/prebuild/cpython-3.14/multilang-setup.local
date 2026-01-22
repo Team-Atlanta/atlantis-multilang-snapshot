@@ -1,2 +1,0 @@
-# Edit this file for local setup changes
-zlib zlibmodule.c -I$(prefix)/include -L$(exec_prefix)/lib -lz

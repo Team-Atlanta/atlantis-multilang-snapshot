@@ -3,13 +3,9 @@
 import argparse
 import logging
 import os
-import re
 import subprocess
 import time
-from datetime import datetime
 from pathlib import Path
-
-from libCRS.otel import install_otel_logger
 
 
 def setup_file_log_for_test(logfile: str) -> None:
@@ -21,42 +17,6 @@ def setup_file_log_for_test(logfile: str) -> None:
     file_handler.setFormatter(formatter)
 
     logger.addHandler(file_handler)
-
-
-def log_testlang_status(workdir: str):
-    testlang_dir = Path(workdir) / "harness-reverser"
-    for testlang in testlang_dir.glob("testlang_*.out"):
-        testlang_path = testlang.resolve()
-        if testlang_path.exists():
-            logging.info(f"[Harness Reverser] testlang created at {testlang_path}")
-            return
-
-    logging.info("[Harness Reverser] testlang is yet to be created")
-
-
-def log_mlla_status(workdir: str):
-    pattern = re.compile(r"mlla-result-(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})\.yaml")
-    matched_files = []
-
-    for root, _, files in os.walk(workdir):
-        for filename in files:
-            match = pattern.match(filename)
-            if match:
-                timestamp_str = match.group(1)
-                try:
-                    timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
-                    full_path = os.path.join(root, filename)
-                    matched_files.append((timestamp, full_path))
-                except Exception:
-                    continue
-
-    matched_files.sort()
-
-    logging.info(f"[MLLA] {len(matched_files)} results total:")
-    for timestamp, path in matched_files:
-        logging.info(
-            f"[MLLA] Result at {timestamp.strftime('%Y-%m-%d %H:%M:%S')} found at: {path}"
-        )
 
 
 def log_corpus_status(corpus_dir: str):
@@ -106,22 +66,10 @@ def log_uniafl_status(
     harness_name: str, workdir: str, corpus_dir: str, cov_dir: str, pov_dir: str
 ):
     logging.info("=" * 100)
-    log_testlang_status(workdir)
-    log_mlla_status(workdir)
     log_corpus_status(corpus_dir)
     log_coverage_status(cov_dir)
     log_pov_status(pov_dir)
     logging.info("=" * 100)
-
-
-def cp_workdir_to_shared(harness_name: str, workdir: str):
-    workdir = Path(workdir)
-    shared = Path(os.getenv("SHARED_DIR", "/tmp/")) / harness_name
-    for name in ["dictgen", "harness-reverser", "mlla"]:
-        os.makedirs(str(shared / name), exist_ok=True)
-        subprocess.run(
-            ["rsync", "-a", f"{workdir / name}/.", str(shared / name)], check=False
-        )
 
 
 def copy_corpus_to_shared(harness_name: str, corpus_dir: str):
@@ -171,16 +119,13 @@ def main():
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
-    # setup_file_log_for_test(f"/{args.harness_name}.log")
-    install_otel_logger(action_name="uniafl")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
     while True:
         log_uniafl_status(
             args.harness_name, args.workdir, args.corpus_dir, args.cov_dir, args.pov_dir
         )
         if os.environ.get('TEST_ROUND', 'False') == 'True':
-            cp_workdir_to_shared(args.harness_name, args.workdir)
             copy_corpus_to_shared(args.harness_name, args.corpus_dir)
         time.sleep(args.interval)
 

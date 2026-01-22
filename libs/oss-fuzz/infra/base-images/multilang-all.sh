@@ -6,25 +6,7 @@ DIR=$(dirname $0)
 #docker build -t ghcr.io/aixcc-finals/base-image "$@" $DIR/base-image
 cp $DIR/../../../../uniafl/src/msa/manager/manager.c $DIR/multilang-clang/manager.cpp
 cp $DIR/../../../../uniafl/src/msa/manager/manager.h $DIR/multilang-clang/manager.h
-rsync -av --delete \
-	$DIR/../../../../uniafl/src/concolic/executor/symcc/prebuild/ \
-	--exclude='concolic_executor/target/' \
-	--exclude='concolic_executor/libsymcc-rt.so' \
-	--exclude='concolic_executor/symcc-venv/' \
-	--exclude='cpython-3.14/build' \
-	--exclude='LibAFL/target/' \
-	--exclude='z3/build' \
-	--exclude='symcc-pass/build/' \
-	--exclude='atlantis_cc/target/' \
-	--exclude='atlantis_cc/*_wrapper' \
-	--exclude='symqemu-multilang/build/' \
-	--exclude='symqemu-multilang/symqemu-venv/' \
-	--exclude='symqemu-multilang/**/.cache/' \
-	--exclude='glib-2.66/_build/' \
-	--exclude='glib-2.66/meson-venv/' \
-	--exclude='symcc-fuzzing-engine/build/' \
-	$DIR/base-builder/symcc-binaries/ 2>&1 > /dev/null
-pushd $DIR/base-builder/symcc-binaries && ./clean.sh && popd
+# Symcc prebuild removed - concolic execution disabled
 docker build -t multilang-clang "$@" $DIR/multilang-clang || exit -1
 docker build -t multilang-builder "$@" -f $DIR/base-builder/Dockerfile.multilang $DIR/base-builder || exit -1
 docker build -t multilang-builder-jvm "$@" -f $DIR/base-builder-jvm/Dockerfile.multilang $DIR/base-builder-jvm || exit -1

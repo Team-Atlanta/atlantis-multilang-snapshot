@@ -1,200 +1,147 @@
 # CRS-multilang
 
-# How to set up
+Multi-language Cyber Reasoning System for automated vulnerability discovery using UniAFL.
 
-0. Install Docker
+## OSS-CRS Integration
 
-1. Install Python Dependencies
-```
-pip install -r ./requirements.txt
-```
+### Three-Phase Architecture
 
-2. Build docker images
 ```
-./docker-build.sh
+PREPARE → BUILD → RUN
 ```
 
-3. Set up [LiteLLM](https://github.com/BerriAI/litellm)
-- Configure LiteLLM to support the following LLM models:
-  - OpenAI Models
-    - o3
-    - o4-mini
-    - gpt-4o
-    - gpt-4o-mini
-    - gpt-4.1-mini
-  - Anthropic Models
-    - claude-opus-4-20250514
-    - claude-sonnet-4-20250514
-    - claude-3-7-sonnet-20250219
-    - claude-3-5-haiku-20241022
-  - Google (Gemini) Models
-    - gemini-2.5-pro
+**PREPARE** (one-time): Build CRS infrastructure images
+**BUILD** (per-project): Compile fuzzers for a target project
+**RUN** (per-harness): Execute fuzzing for each harness
 
-4. Prepare Benchmarks (Targets)
-- Ensure your benchmarks follow the [OSS-Fuzz](https://github.com/google/oss-fuzz) directory structure.
-- Place the OSS-Fuzz-style benchmark directories inside the `./benchmarks`.
-  - Currently, we support benchmarks written in either `c` or `jvm` (`java`).
-  - For example, place a benchmark named `target_repo` at `./benchmarks/projects/aixcc/{language}/target_repo`.
-    - if `target_repo` is written in `c`, place it at `./benchmarks/projects/aixcc/c/target_repo`
-    - if `target_repo` is written in `jvm` (`java`), place it at `./benchmarks/projects/aixcc/jvm/target_repo`.
+### PREPARE Phase
 
+Build all required base images:
 
-# How to run
-```
-usage: run.py [-h] {show-targets,test-all,instrument-all,run,eval,build,build_crs} ...
-
-Run CRS to find bugs in the target
-
-options:
-  -h, --help            show this help message and exit
-
-commands:
-  {show-targets,test-all,instrument-all,run,eval,build,build_crs}
-    show-targets        Show all AIxCC projects
-    test-all            Run test against all AIxCC projects
-    instrument-all      Instrument all AIxCC projects
-    run                 Run the target project
-    eval                Eval the target project
-    build               Build target CP
-    build_crs           Build docker images
-
-// Run CRS-multilang with all components againt the target (aixcc/c/mock-c)
-LITELLM_KEY=key LITELLM_URL=url ./run.py run --target aixcc/c/mock-c --config ./crs.config --start-other-services
-
-// Run as log mode
-LITELLM_KEY=key LITELLM_URL=url ./run.py run --target aixcc/c/mock-c --config ./crs.config --start-other-services --log
-
-// Test CRS-multilang against the target (aixcc/c/mock-c)
-LITELLM_KEY=key LITELLM_URL=url ./run.py run --target aixcc/c/mock-c --test
+```bash
+docker buildx bake prepare        # Build all base images
+docker buildx bake prepare-c      # Build C/C++ images only
+docker buildx bake prepare-jvm    # Build JVM images only
 ```
 
-You can check the results inside the CRS-multilang docker container by using this command.
-```
-root@3fc17dbf8f8f:/# show_result // Show found crashes and POVs
-[DB] /crs-workdir/worker-0/submit/submit.db
-+----------+---------------------+---------------------------+------------------------------------------------------------------------------------+--------+--------------------------------------------------------------------+------------+
-| Status   | Finder              | Harness                   | PoV                                                                                | UUID   | Sanitizer Output                                                   |   Time (s) |
-+==========+=====================+===========================+====================================================================================+========+====================================================================+============+
-| pending  | UniAFL.given_fuzzer | fuzz_parse_buffer_section | /crs-workdir/worker-0/HarnessRunner/fuzz_parse_buffer_section/pov/acebd8064c293401 |        | __asan_memcpy--parse_buffer_section--LLVMFuzzerTestOneInput        |          4 |
-|          |                     |                           |                                                                                    |        | __interceptor_malloc--parse_buffer_section--LLVMFuzzerTestOneInput |            |
-+----------+---------------------+---------------------------+------------------------------------------------------------------------------------+--------+--------------------------------------------------------------------+------------+
+**Image Dependencies:**
 
-root@3fc17dbf8f8f:/crs-workdir/worker-0/HarnessRunner/{HARNESS_NAME}# ls -als
-root@3fc17dbf8f8f:/crs-workdir/worker-0/HarnessRunner/fuzz_parse_buffer_section# ls -als
-total 32
-4 drwxr-xr-x 7 root root 4096 Jul 22 18:09 .
-4 drwxr-xr-x 4 root root 4096 Jul 22 18:09 ..
-4 drwxr-xr-x 2 root root 4096 Jul 22 18:09 others_corpus
-4 drwxr-xr-x 2 root root 4096 Jul 22 18:09 pov              // Has POV blobs            
-4 -rw-r--r-- 1 root root    1 Jul 22 18:09 tmp
-4 drwxr-xr-x 5 root root 4096 Jul 22 18:09 uniafl           // Has working directories for each module
-4 drwxr-xr-x 2 root root 4096 Jul 22 18:09 uniafl_corpus    // Has blobs in corpus
-4 drwxr-xr-x 2 root root 4096 Jul 22 18:09 uniafl_cov       // Has coverage data for each seed
+```
+multilang-clang ──► multilang-builder ──► multilang-c-archive ──┐
+                                                                ├──► crs-multilang ──► crs-multilang-runner
+multilang-builder-jvm ──► multilang-jvm-archive ────────────────┘
 ```
 
-If you want to run CRS-multilang and check the results with fancy web ui, please check [`./e2e-eval`](./e2e-eval/).
+### BUILD Phase
 
-# CRS Config
-```
-{
-  "target_harnesses": ["ossfuzz-1"],
-}
-```
-The above configuration runs CRS-multilang against `ossfuzz-1` harness in the given CP.
+Compile fuzzers for a target project:
 
-We can add more options to the configuration like this:
-```
-{
-  "target_harnesses": ["ossfuzz-1"],
-  "ncpu": 16,                        # The number of CPU to use
-                                     # default is the number of CPUs in the machine
-  "others": {
-    "input_gens":["given_fuzzer"]    # Options for which input generators to employ.
-                                     # default is employing all input generators
-  }
-}
-```
-where a list of our input generators
-```
-{
-  "given_fuzzer": "Run the given harness based on libFuzzer or Jazzer",
-  "concolic_input_gen": "Perform concolic execution to generate new inputs",
-  "testlang_input_gen": "By using LLM, infer the input grammar (testlang) of the given harness and perform grammar-based fuzzing",
-  "dict_input_gen": "By using LLM, generate function-level dictionary and mutate inputs based on it",
-  "mlla": "By using LLM, figure out bug candidates and create python scripts for generating new inputs and mutating the given inputs",
-  "share": "Load seeds shared by other bug finding CRSs",
-  "mock_input_gen": "input gen for testing our infra"
-}
+```bash
+docker build \
+  --build-arg parent_image=gcr.io/oss-fuzz/json-c \
+  --build-arg CRS_TARGET=json-c \
+  -f builder.Dockerfile \
+  -t crs-builder-json-c .
+
+docker run -v ./out:/out crs-builder-json-c
 ```
 
-# Troubleshooting
+### RUN Phase
 
-## OSS-Fuzz Dockerfile Configuration
+Execute CRS fuzzing:
 
-As the competition requires a specialized format, the Dockerfile needs a few small adjustments. CRS-multilang is built on the AIxCC version of base-builder:v1.3.0.
+```bash
+docker buildx bake crs-multilang-runner
 
-Here's an example of the necessary changes (from the mongoose project):
-```diff
-17c17
-< FROM gcr.io/oss-fuzz-base/base-builder
----
-> FROM ghcr.io/aixcc-finals/base-builder:v1.3.0
-20c20
-< WORKDIR $SRC
----
-> WORKDIR $SRC/mongoose
+docker run \
+  -v ./out:/out:ro \
+  -v ./artifacts:/artifacts \
+  -e CRS_TARGET=json-c \
+  -e FUZZING_LANGUAGE=c \
+  -e CRS_NAME=crs-multilang \
+  crs-multilang-runner json_parse_fuzzer
 ```
 
-Note: The WORKDIR should be set to `$SRC/<project-name>` specific to each project (e.g., `$SRC/mongoose` for mongoose).
+## Environment Variables
 
-Related issue: https://github.com/Team-Atlanta/aixcc-afc-atlantis/issues/6#issuecomment-3514059044
+### Build Phase
 
-# How to deploy
-Here is how to build and push all docker images for running the integrated CRS in Terraform.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SANITIZER` | `address` | Sanitizer(s): `address`, `undefined`, `address,undefined` |
+| `FUZZING_ENGINE` | `libfuzzer` | Fuzzing engine |
+| `CRS_TARGET` | - | Target project name |
+
+### Run Phase
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CRS_NAME` | - | CRS identifier (enables OSS-CRS mode) |
+| `CRS_TARGET` | - | Target project name |
+| `TARGET_HARNESS` | (all) | Run only this harness |
+| `FUZZING_LANGUAGE` | `c` | Target language: `c`, `c++`, `jvm` |
+
+## Output Structure
+
 ```
-./docker-build.sh
-./docker-img-push.sh <REGISTRY URL> <TAG>
+/artifacts/
+├── povs/{harness}/           # Discovered POVs (deduplicated)
+│   └── {hash}_{filename}
+├── corpus/{harness}/         # Fuzzing corpus
+└── crs-data/
+    └── coverage/{harness}/   # Coverage data
 ```
 
-# Overview
-![Overview](static/CRS-multilang.png)
-- [UniAFL](./uniafl/): Fuzzing Infrastructure
-  - [Basic Infrastructure](./uniafl/src/msa/)
-  - [Corpus Manager](./uniafl/src/msa/scheduler.rs)
-  - [Executor](./uniafl/src/executor/)
-  - [Extensible Input Generator Modules](./uniafl/src/input_gen/)
-- [FuzzDB](./fuzzdb/): Database of Fuzzing Results.
-- [Concolic Executor](./uniafl/src/concolic/): SymCC/SymQEMU-based Concolic Executor
-- Dictionary-based Input Generator:
-  - [Dictionary-Generator](./dictgen/): Ask LLM to infer dictionaries for the given function
-  - [Dictionary-based Mutator](./uniafl/src/input_gen/dict/): `Function-level` dictionary-based Mutator
-- Testlang-based Input Generator:
-  - [Reverser](./reverser/): Figure out an input format (testlang) of the given harness
-  - [Testlang-based Generator/Mutator](./uniafl/src/input_gen/testlang/)
-- `M`ulti`L`ang-`L`lm-`A`gent ([MLLA](./blob-gen/multilang-llm-agent/)): LLM-based Input Generator
-  - MLLA Standalone:
-    - Based on the given harness and the given target, Ask LLM to
-      1. Create python scripts that `generate a new input (blob)`.
-      2. Create python scripts that `randomly generates inputs`.
-  - MLLA:
-    - Based on the given harness and the given target, Ask LLM to
-      1. Analyze target and draw tainted call graphs.
-      2. Based on the tainted call graphs, Find bug candidates.
-      3. Based on the bug candidates and the tainted call graphs, write `python scripts` that
-        - `Generate a blob` that triggers the bug candidates
-        - `Randomly generate blobs` that trigger the bug candidates
-        - `Randomly mutate blobs` to trigger the bug candidates
+## Delta Mode
 
+Focus fuzzing on code changes by providing a diff file:
 
-# Authors (CRS-multilang Team @Team Atlanta)
-- HyungSeok Han (Lead, Integration, UniAFL)
-- Jiho Kim (UniAFL, Benchmarks)
-- Woosun Song (Concolic Executor)
-- Dae R. Jung (Dictionary-based)
-- Kangsu Kim (Testlang-based)
-- Dohyeok Kim (Testlang-based)
-- Eunsoo Kim (Testlang-based)
-- Soyeon Park  (MLLA)
-- Dongkwan Kim (MLLA)
-- Sangwoo Ji (MLLA)
-- Joshua Wang (MLLA)
+```bash
+docker run -v ./changes.diff:/ref.diff:ro crs-multilang-runner harness_name
+```
+
+## Ensemble Mode
+
+Share seeds between multiple CRS instances:
+
+```bash
+docker run -v ./seed_share:/seed_share_dir crs-multilang-runner harness_name
+```
+
+## Architecture
+
+```
+CRS-multilang/
+├── bin/                        # Executable scripts
+│   ├── main.py                 # Main entry point (UniAFL module)
+│   ├── crs_entrypoint          # Container entrypoint
+│   ├── run_once                # Single input executor
+│   ├── cov_runner              # Coverage runner mode
+│   ├── watchdog.py             # Status logging
+│   ├── seed_share.py           # Ensemble seed sharing
+│   ├── extract_from_diff.py    # Delta mode diff processing
+│   ├── jazzer_cleaner.py       # JVM temp cleanup
+│   ├── get_run_fuzzer_opt      # Fuzzer option parsing
+│   └── symbolizer/             # Coverage symbolization
+├── libs/
+│   ├── libCRS/                 # Core CRS Python library
+│   │   ├── crs.py              # CRS framework
+│   │   ├── config.py           # Configuration
+│   │   ├── challenge.py        # Harness handling
+│   │   ├── module.py           # Module abstraction
+│   │   ├── paths.py            # Path resolution
+│   │   ├── submit.py           # POV deduplication (SQLite)
+│   │   ├── ossfuzz_lib.py      # Fuzz target detection
+│   │   └── util.py             # Utilities
+│   └── oss-fuzz/               # OSS-Fuzz base images
+├── uniafl/                     # UniAFL fuzzer (Rust)
+├── fuzzdb/                     # Coverage database (Rust + Python)
+│   ├── src/                    # Rust implementation
+│   └── python/                 # Python bindings
+├── Dockerfile                  # Main CRS image
+├── builder.Dockerfile          # BUILD phase image
+├── runner.Dockerfile           # RUN phase image
+├── Dockerfile.c_archive        # C/C++ build tools archive
+├── Dockerfile.jvm_archive      # JVM build tools archive
+└── docker-bake.hcl             # Build orchestration
+```

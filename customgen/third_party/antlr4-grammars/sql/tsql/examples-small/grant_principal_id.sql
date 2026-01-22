@@ -1,1 +1,0 @@
-GRANT SELECT ON bk_tax_form_processing to DEV_READ_ONLY_ROLE;

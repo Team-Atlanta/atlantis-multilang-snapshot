@@ -20,8 +20,6 @@ serde_yaml = "0.9.34"
 sha1 = "0.10.6"
 tempfile = "3.4"
 byteorder = "1.4"
-z3 = { path = "../libs/z3.rs/z3" }
-z3-sys = { path = "../libs/z3.rs/z3-sys" }
 goblin = "0.7"
 addr2line = "0.17.0"
 memmap2 = "0.5.3"
@@ -32,10 +30,7 @@ bytes = "1.1"
 thiserror = "2.0"
 shared_memory = "0.12"
 async-process = "2.3.0"
-libfdp = { path = "../libs/libFDP/libfdp" }
-testlang = { path = "../testlang" }
 fuzzdb = { path = "../fuzzdb" }
-customgen = { path = "../customgen/rust_client" }
 tokio = { version = "1.41.0", features = ["full"] }
 libc = "0.2.162"
 num_enum = "0.7.3"
@@ -65,27 +60,14 @@ cgroups-rs = "0.3.4"
 fslock = "0.2"
 
 [features]
-# Features to test the kernel executor
 vmtest = []
 vmtest-verbose = []
 slowdown = []
-profile_symstate = []
-input_gen_logging = []
-default = ["concolic_profiling"]
+default = []
 log = []
-concolic_profiling = []
-testlang-debug = ["log"]
 
 [build-dependencies]
 cc = "1.1"
 
 [dev-dependencies]
 glob = "0.3"
-
-[[bin]]
-name = "input_gen_runner"
-path = "src/input_gen_runner.rs"
-
-[[bin]]
-name = "concolic_utils"
-path = "src/concolic_utils.rs"

@@ -1,5 +1,0 @@
-java_library(
-    name = "parser",
-    srcs = ["Parser.java"],
-    visibility = ["//examples/junit/src/test/java/com/example:__pkg__"],
-)

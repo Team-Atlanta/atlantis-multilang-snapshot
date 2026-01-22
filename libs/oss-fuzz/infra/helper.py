@@ -37,13 +37,6 @@ import templates
 OSS_FUZZ_DIR = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 BUILD_DIR = os.path.join(OSS_FUZZ_DIR, 'build')
 
-# Host docker socket mode: when HOST_WORK_DIR/HOST_OUT_DIR are set,
-# use them for docker volume mounts instead of container paths
-_HOST_WORK_DIR = os.environ.get("HOST_WORK_DIR")
-_HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
-# HOST_OUT_SUBDIR: subdirectory for non-main builds (coverage, symcc, lsp)
-_HOST_OUT_SUBDIR = os.environ.get("HOST_OUT_SUBDIR", "")
-
 BASE_IMAGE_TAG = ':v1.3.0' # no tag for latest
 
 BASE_RUNNER_IMAGE = f'ghcr.io/aixcc-finals/base-runner{BASE_IMAGE_TAG}'
@@ -195,20 +188,6 @@ class Project:
   def work(self):
     """Returns the out dir for the project. Creates it if needed."""
     return _get_project_build_subdir(self.name, 'work')
-
-  @property
-  def host_out(self):
-    """Returns the out dir for docker mounts. Uses HOST_OUT_DIR when set."""
-    if _HOST_OUT_DIR:
-      return _HOST_OUT_DIR
-    return self.out
-
-  @property
-  def host_work(self):
-    """Returns the work dir for docker mounts. Uses HOST_WORK_DIR when set."""
-    if _HOST_WORK_DIR:
-      return _HOST_WORK_DIR
-    return self.work
 
   @property
   def corpus(self):
@@ -613,7 +592,7 @@ def _check_fuzzer_exists(project, fuzzer_name, architecture='x86_64'):
   """Checks if a fuzzer exists."""
   platform = 'linux/arm64' if architecture == 'aarch64' else 'linux/amd64'
   command = ['docker', 'run', '--rm', '--platform', platform]
-  command.extend(['-v', '%s:/out' % project.host_out])
+  command.extend(['-v', '%s:/out' % project.out])
   command.append(BASE_RUNNER_IMAGE)
 
   command.extend(['/bin/bash', '-c', 'test -f /out/%s' % fuzzer_name])
@@ -908,21 +887,21 @@ def build_fuzzers_impl(  # pylint: disable=too-many-arguments,too-many-locals,to
   docker_image = f'aixcc-afc/{project.name}:{docker_image_tag}'
 
   project_out = os.path.join(project.out, child_dir)
-  project_host_out = os.path.join(project.host_out, child_dir)
   if clean:
     logger.info('Cleaning existing build artifacts.')
 
     # Clean old and possibly conflicting artifacts in project's out directory.
     docker_run([
-        '-v', f'{project_host_out}:/out', '-t', f'{docker_image}',
-        '/bin/bash', '-c', 'rm -rf /out/*'
+        '--entrypoint', '/bin/bash', '-v', f'{project_out}:/out', '-t', f'{docker_image}',
+        '-c', 'rm -rf /out/*'
     ],
                architecture=architecture)
 
     docker_run([
+        '--entrypoint', '/bin/bash',
         '-v',
-        '%s:/work' % project.host_work, '-t',
-        f'{docker_image}', '/bin/bash', '-c', 'rm -rf /work/*'
+        '%s:/work' % project.work, '-t',
+        f'{docker_image}', '-c', 'rm -rf /work/*'
     ],
                architecture=architecture)
 
@@ -966,7 +945,7 @@ def build_fuzzers_impl(  # pylint: disable=too-many-arguments,too-many-locals,to
       ]
 
   command += [
-      '-v', f'{project_host_out}:/out', '-v', f'{project.host_work}:/work',
+      '-v', f'{project_out}:/out', '-v', f'{project.work}:/work',
       f'{docker_image}'
   ]
 
@@ -1050,10 +1029,6 @@ def run_clusterfuzzlite(args):
 
 def build_fuzzers(args):
   """Builds fuzzers."""
-  # In host docker mode, use HOST_OUT_SUBDIR for non-main builds (coverage, symcc, lsp)
-  # This ensures each build type writes to its own subdirectory
-  host_out_subdir = os.environ.get("HOST_OUT_SUBDIR", "")
-
   if args.engine == 'centipede' and args.sanitizer != 'none':
     # Centipede always requires separate binaries for sanitizers:
     # An unsanitized binary, which Centipede requires for fuzzing.
@@ -1062,9 +1037,6 @@ def build_fuzzers(args):
         ('none', ''),
         (args.sanitizer, f'__centipede_{args.sanitizer}'),
     )
-  elif host_out_subdir:
-    # Use subdirectory specified by run.py for non-main builds
-    sanitized_binary_directories = ((args.sanitizer, host_out_subdir),)
   else:
     # Generally, a fuzzer only needs one sanitized binary in the default dir.
     sanitized_binary_directories = ((args.sanitizer, ''),)
@@ -1149,7 +1121,7 @@ def check_build(args):
     env += args.e
 
   run_args = _env_to_docker_args(env) + [
-      '-v', f'{args.project.host_out}:/out', '-t', BASE_RUNNER_IMAGE
+      '-v', f'{args.project.out}:/out', '-t', BASE_RUNNER_IMAGE
   ]
 
   if args.fuzzer_name:
@@ -1383,7 +1355,7 @@ def coverage(args):  # pylint: disable=too-many-branches
 
   run_args.extend([
       '-v',
-      '%s:/out' % args.project.host_out,
+      '%s:/out' % args.project.out,
       '-t',
       BASE_RUNNER_IMAGE,
   ])
@@ -1589,7 +1561,7 @@ def fuzzbench_run_fuzzer(args):
                    check=True)
     run_args.extend([
         '-v',
-        f'{args.project.host_out}:/out',
+        f'{args.project.out}:/out',
         '-v',
         f'{fuzzbench_path}:{fuzzbench_path}',
         '-e',
@@ -1616,7 +1588,7 @@ def fuzzbench_measure(args):
     ],
                    check=True)
     run_args = [
-        '-v', f'{args.project.host_out}:/out', '-v',
+        '-v', f'{args.project.out}:/out', '-v',
         f'{fuzzbench_path}:{fuzzbench_path}', '-e',
         f'FUZZBENCH_PATH={fuzzbench_path}', '-e', 'EXPERIMENT_TYPE=bug', '-e',
         f'FUZZ_TARGET={args.fuzz_target_name}', '-e',
@@ -1672,7 +1644,7 @@ def reproduce_impl(  # pylint: disable=too-many-arguments
 
   run_args = _env_to_docker_args(env) + [
       '-v',
-      '%s:/out' % project.host_out,
+      '%s:/out' % project.out,
       '-v',
       '%s:/testcase' % _get_absolute_path(testcase_path),
       '-t',
@@ -1804,7 +1776,7 @@ def shell(args):
   else:
     image_project = 'aixcc-afc'
     project_full = '%s/%s:%s' % (image_project, args.project.name, args.docker_image_tag)
-    out_dir = args.project.host_out
+    out_dir = args.project.out
 
   run_args = _env_to_docker_args(env)
   if args.source_path:
@@ -1818,7 +1790,7 @@ def shell(args):
   run_args.extend([
       '-v',
       '%s:/out' % out_dir, '-v',
-      '%s:/work' % args.project.host_work, '-t',
+      '%s:/work' % args.project.work, '-t',
       '%s' % (project_full), '/bin/bash'
   ])
 

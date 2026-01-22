@@ -1,5 +1,0 @@
-.cifuzz-build/
-.cifuzz-corpus/
-.cifuzz-findings/
-target/
-src/test/resources/

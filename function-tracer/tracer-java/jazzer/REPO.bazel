@@ -1,3 +1,0 @@
-# Applies to all packages in the Jazzer main repository, but not to external repositories.
-# Override on a per-package basis via `package(default_applicable_licenses = [...])` if necessary.
-repo(default_applicable_licenses = ["//:license"])

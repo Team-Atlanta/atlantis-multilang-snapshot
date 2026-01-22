@@ -1,6 +1,0 @@
-*.txt
-trigger
-trace.json
-trace.bin
-/*_harness
-/*_fuzzer

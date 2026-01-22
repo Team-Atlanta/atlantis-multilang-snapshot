@@ -6,13 +6,7 @@ use super::{
     stage::{InputGenStage, LoadStage, MsaStage, MsaStagesTuple},
     state::UniState,
 };
-use crate::{
-    executor::Executor,
-    input_gen::{
-        concolic_service::ConcolicPool, dict::service::DictPool, server::InputGenPool,
-        testlang::service::pool::TestLangPool,
-    },
-};
+use crate::executor::Executor;
 
 pub struct MsaFuzzer<ST: MsaStagesTuple> {
     state: Arc<UniState>,

@@ -8,10 +8,13 @@ use std::{collections::HashMap, path::PathBuf, sync::RwLock};
 
 use super::{
     corpus::UniCorpus,
-    manager::{MsaInput, MsaManager},
+    manager::{CovAddr, MsaInput, MsaManager},
     scheduler::UniScheduler,
 };
+use crate::common::challenge::sha1hash;
 use crate::executor::{CovObserver, CrashObserver, Executor};
+
+const DEFAULT_TIMEOUT_LOG: &[u8] = b"EMPTY TIMEOUT LOG";
 
 pub type UniInput = BytesInput;
 pub struct UniState {
@@ -183,8 +186,22 @@ impl UniState {
             }
             let bytes = msa_input.bytes();
             if let Some((parsed_log, reproduce_log)) = executor.run_pov(bytes) {
-                if local_crash_observer.add_log(&parsed_log) {
-                    interesting.push((msa_input, parsed_log, reproduce_log));
+                // Use coverage hash for timeout deduplication instead of DEFAULT_TIMEOUT_LOG
+                let dedup_log = if parsed_log == DEFAULT_TIMEOUT_LOG {
+                    let cov = msa_input.get_cov();
+                    let cov_bytes: &[u8] = unsafe {
+                        std::slice::from_raw_parts(
+                            cov.as_ptr() as *const u8,
+                            cov.len() * std::mem::size_of::<CovAddr>(),
+                        )
+                    };
+                    let cov_hash = sha1hash(cov_bytes);
+                    format!("TIMEOUT_COV_HASH:{}", cov_hash).into_bytes()
+                } else {
+                    parsed_log
+                };
+                if local_crash_observer.add_log(&dedup_log) {
+                    interesting.push((msa_input, dedup_log, reproduce_log));
                 }
             }
         }
@@ -295,6 +312,7 @@ impl UniState {
             let mut solutions = self.solutions.write().unwrap();
             let mut crash_observer = self.crash_observer.write().unwrap();
             for (pov, log, raw_log) in povs {
+                // log already has coverage hash applied in add_if_interesting_crash
                 if !crash_observer.add_log(&log) {
                     continue;
                 }

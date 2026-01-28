@@ -390,8 +390,11 @@ def error(msg):
     sys.exit(-1)
 
 
-def build_docker_image(name, dockerfile):
+def build_docker_image(name, dockerfile, cache=False):
     prefix = "[CRS] "
+    if cache and docker.image.exists(name):
+        logger.info(prefix + f"Image {name} already exists, skipping build")
+        return
     cmd = ["docker", "build", "-t", name, "-f", dockerfile]
     cgroup_parent = os.environ.get("CGROUP_PARENT")
     if cgroup_parent:
@@ -402,16 +405,17 @@ def build_docker_image(name, dockerfile):
 
 def build_crs(args):
     prefix = "[CRS] "
+    cache = args.get("cache", False)
     logger.info(prefix + "Build OSS-fuzz base images")
     if args.get("build_base_img", False):
         run([OSS_FUZZ / "infra/base-images/multilang-all.sh"], prefix=prefix)
     if args.get("skip_build_crs", False):
         logger.info(prefix + "Skip building CRS docker images")
         return
-    build_docker_image("crs-multilang", "Dockerfile")
-    build_docker_image("multilang-c-archive", "Dockerfile.c_archive")
-    build_docker_image("multilang-jvm-archive", "Dockerfile.jvm_archive")
-    build_docker_image(LSP_BASE, "lsp/Dockerfile")
+    build_docker_image("crs-multilang", "Dockerfile", cache)
+    build_docker_image("multilang-c-archive", "Dockerfile.c_archive", cache)
+    build_docker_image("multilang-jvm-archive", "Dockerfile.jvm_archive", cache)
+    build_docker_image(LSP_BASE, "lsp/Dockerfile", cache)
 
 
 def new_target_project(path, silent=False, force=False):
@@ -1866,6 +1870,12 @@ if __name__ == "__main__":
     parser_build_crs.add_argument(
         "--skip-symcc-verification",
         help="skip symcc verification",
+        action="store_true",
+        default=False,
+    )
+    parser_build_crs.add_argument(
+        "--cache",
+        help="skip building images that already exist locally",
         action="store_true",
         default=False,
     )

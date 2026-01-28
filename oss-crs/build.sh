@@ -45,7 +45,12 @@ fi
 
 # Step 3: Build CRS docker images using run.py build_crs
 echo "Building CRS docker images via run.py build_crs..."
-python3 run.py build_crs
+BUILD_CRS_CMD="python3 run.py build_crs"
+if [ "${BUILD_CRS_CACHE:-}" = "1" ] || [ "${BUILD_CRS_CACHE:-}" = "true" ]; then
+    BUILD_CRS_CMD="$BUILD_CRS_CMD --cache"
+    echo "Cache enabled: skipping rebuild of existing images"
+fi
+$BUILD_CRS_CMD
 
 # Build multilang-runner-joern (not included in build_crs, but needed for runner)
 echo "Building multilang-runner-joern..."

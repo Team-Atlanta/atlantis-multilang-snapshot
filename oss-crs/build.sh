@@ -12,6 +12,19 @@ echo "Source directory: $SOURCE_DIR"
 # Export CGROUP_PARENT so child processes (python3 run.py) can access it
 export CGROUP_PARENT="${CGROUP_PARENT:-}"
 
+# Generate unique container suffix: {run_id}_{random4}
+# RUN_ID: lowercase identifier for this run
+# Random: 4-char hex to ensure uniqueness even with same RUN_ID
+RANDOM_SUFFIX=$(head -c 2 /dev/urandom | xxd -p)
+if [ -n "${RUN_ID:-}" ]; then
+    # Sanitize RUN_ID to lowercase
+    SAFE_RUN_ID=$(echo "$RUN_ID" | tr '[:upper:]' '[:lower:]')
+    CONTAINER_SUFFIX="${SAFE_RUN_ID}_${RANDOM_SUFFIX}"
+else
+    CONTAINER_SUFFIX="${RANDOM_SUFFIX}"
+fi
+export CONTAINER_SUFFIX
+
 cd /crs-multilang
 
 # Step 1: Verify Docker socket is available (needed for build_crs)

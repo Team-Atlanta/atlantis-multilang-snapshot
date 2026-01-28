@@ -66,6 +66,8 @@ class OtherDockers:
     def __init__(self, name, need_to_run):
         self.name = name
         self.proj_name = name.replace("/", "_")
+        suffix = os.environ.get("CONTAINER_SUFFIX", os.urandom(2).hex())
+        self.proj_name = (self.proj_name + "_" + suffix).lower()
         self.need_to_run = need_to_run
 
     def __enter__(self):
@@ -1411,6 +1413,8 @@ class CP_Builder:
     def __start_lsp(self, target):
         compose_file = CUR_DIR / "azure-other-services.yml"
         proj_name = target.name.replace("/", "_")
+        suffix = os.environ.get("CONTAINER_SUFFIX", os.urandom(2).hex())
+        proj_name = (proj_name + "_" + suffix).lower()
         os.environ["CP"] = target.name
         os.environ["LSP_RUNNER"] = lsp_runner_docker_name(target.name)
         os.environ["TARBALL_DIR"] = str(target.tarball_dir)

@@ -43,6 +43,7 @@ echo "Runner container ID: $RUNNER_CONTAINER_ID"
 echo "Environment:"
 echo "  CPUSET_CPUS: ${CPUSET_CPUS:-not set}"
 echo "  MEMORY_LIMIT: ${MEMORY_LIMIT:-not set}"
+echo "  CGROUP_PARENT: ${CGROUP_PARENT:-not set}"
 echo "  RUN_FUZZER_MODE: ${RUN_FUZZER_MODE:-not set}"
 echo "  CRS_INPUT_GENS: ${CRS_INPUT_GENS:-given_fuzzer}"
 
@@ -68,6 +69,7 @@ done
 export HARNESS_NAME="$HARNESS_NAME"
 export CPUSET_CPUS="${CPUSET_CPUS:-0-7}"
 export MEMORY_LIMIT="${MEMORY_LIMIT:-16G}"
+export CGROUP_PARENT="${CGROUP_PARENT:-}"
 export LITELLM_URL="${LITELLM_URL:-}"
 
 # Derive LSP runner image name from CRS_TARGET (provided by oss-crs)

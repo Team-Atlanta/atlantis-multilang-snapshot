@@ -9,6 +9,7 @@ services:
     container_name: redis_${SAFE_TARGET}_${SAFE_HARNESS}
     command: redis-server --appendonly yes
     restart: unless-stopped
+    cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
     networks:
       - crs-internal
@@ -17,6 +18,7 @@ services:
     image: crs-multilang/crs-multilang:latest
     container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
     privileged: true
+    cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
     mem_limit: ${MEMORY_LIMIT:-16G}
     environment:
@@ -58,6 +60,7 @@ services:
   cleanup:
     image: docker:cli
     container_name: cleanup_${SAFE_TARGET}_${SAFE_HARNESS}
+    cgroup_parent: ${CGROUP_PARENT:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:

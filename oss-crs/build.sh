@@ -46,7 +46,11 @@ python3 run.py build_crs
 
 # Build multilang-runner-joern (not included in build_crs, but needed for runner)
 echo "Building multilang-runner-joern..."
-docker build -t multilang-runner-joern -f joern/Dockerfile .
+CGROUP_PARENT_FLAG=""
+if [ -n "${CGROUP_PARENT:-}" ]; then
+    CGROUP_PARENT_FLAG="--cgroup-parent=$CGROUP_PARENT"
+fi
+docker build $CGROUP_PARENT_FLAG -t multilang-runner-joern -f joern/Dockerfile .
 
 # Tag images with namespace for compatibility
 echo "Tagging images with namespace..."

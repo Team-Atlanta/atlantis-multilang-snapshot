@@ -1046,6 +1046,9 @@ class Target:
             else:
                 for network in other_dockers.get_networks(lsp):
                     cmd += ["--network", network]
+            cgroup_parent = os.environ.get("CGROUP_PARENT")
+            if cgroup_parent:
+                cmd += ["--cgroup-parent", cgroup_parent]
             cmd += ["-t", "crs-multilang"]
             if mlla_path != None:
                 cmd += ["run_mlla"]

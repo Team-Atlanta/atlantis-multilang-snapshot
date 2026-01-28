@@ -43,6 +43,7 @@ _HOST_WORK_DIR = os.environ.get("HOST_WORK_DIR")
 _HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
 # HOST_OUT_SUBDIR: subdirectory for non-main builds (coverage, symcc, lsp)
 _HOST_OUT_SUBDIR = os.environ.get("HOST_OUT_SUBDIR", "")
+_CGROUP_PARENT = os.environ.get("OSS_FUZZ_CGROUP_PARENT")
 
 BASE_IMAGE_TAG = ':v1.3.0' # no tag for latest
 
@@ -739,6 +740,9 @@ def build_image_impl(project, cache=True, pull=False,
   build_args.append(docker_build_dir)
 
   if architecture == 'aarch64':
+    if _CGROUP_PARENT:
+      # Insert after 'buildx' and 'build' (index 2)
+      build_args.insert(2, f'--cgroup-parent={_CGROUP_PARENT}')
     command = ['docker'] + build_args
     subprocess.check_call(command)
     return True
@@ -795,6 +799,9 @@ def docker_run(run_args, print_output=True, architecture='x86_64', propagate_exi
           'docker', 'run', '--shm-size=2g', '--platform', platform
       ]
 
+  if _CGROUP_PARENT:
+    command.extend(['--cgroup-parent', _CGROUP_PARENT])
+
   if os.getenv('OSS_FUZZ_SAVE_CONTAINERS_NAME'):
     command.append('--name')
     command.append(os.getenv('OSS_FUZZ_SAVE_CONTAINERS_NAME'))
@@ -830,6 +837,8 @@ def docker_run(run_args, print_output=True, architecture='x86_64', propagate_exi
 def docker_build(build_args):
   """Calls `docker build`."""
   command = ['docker', 'build']
+  if _CGROUP_PARENT:
+    command.extend(['--cgroup-parent', _CGROUP_PARENT])
   command.extend(build_args)
   logger.info('Running: %s.', _get_command_string(command))
 

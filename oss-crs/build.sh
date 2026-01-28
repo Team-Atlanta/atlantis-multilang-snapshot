@@ -58,7 +58,11 @@ CGROUP_PARENT_FLAG=""
 if [ -n "${CGROUP_PARENT:-}" ]; then
     CGROUP_PARENT_FLAG="--cgroup-parent=$CGROUP_PARENT"
 fi
-docker build $CGROUP_PARENT_FLAG -t multilang-runner-joern -f joern/Dockerfile .
+if { [ "${BUILD_CRS_CACHE:-}" = "1" ] || [ "${BUILD_CRS_CACHE:-}" = "true" ] || [ "${BUILD_CRS_CACHE:-}" = "True" ]; } && docker image inspect multilang-runner-joern > /dev/null 2>&1; then
+    echo "Image multilang-runner-joern already exists, skipping build"
+else
+    docker build $CGROUP_PARENT_FLAG -t multilang-runner-joern -f joern/Dockerfile .
+fi
 
 # Tag images with namespace for compatibility
 echo "Tagging images with namespace..."

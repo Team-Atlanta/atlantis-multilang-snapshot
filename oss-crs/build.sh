@@ -9,6 +9,9 @@ echo "Project name: $PROJECT_NAME"
 SOURCE_DIR=$(pwd)
 echo "Source directory: $SOURCE_DIR"
 
+# Export CGROUP_PARENT so child processes (python3 run.py) can access it
+export CGROUP_PARENT="${CGROUP_PARENT:-}"
+
 cd /crs-multilang
 
 # Step 1: Verify Docker socket is available (needed for build_crs)

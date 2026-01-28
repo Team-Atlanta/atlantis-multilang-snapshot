@@ -387,7 +387,12 @@ def error(msg):
 
 def build_docker_image(name, dockerfile):
     prefix = "[CRS] "
-    run(["docker", "build", "-t", name, "-f", dockerfile, CUR_DIR], prefix=prefix)
+    cmd = ["docker", "build", "-t", name, "-f", dockerfile]
+    cgroup_parent = os.environ.get("CGROUP_PARENT")
+    if cgroup_parent:
+        cmd.extend(["--cgroup-parent", cgroup_parent])
+    cmd.append(CUR_DIR)
+    run(cmd, prefix=prefix)
 
 
 def build_crs(args):

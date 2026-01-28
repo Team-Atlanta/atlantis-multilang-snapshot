@@ -2,6 +2,33 @@
 
 DIR=$(dirname $0)
 
+# Parse --cache flag from arguments
+CACHE=false
+DOCKER_ARGS=()
+for arg in "$@"; do
+    if [ "$arg" = "--cache" ]; then
+        CACHE=true
+    else
+        DOCKER_ARGS+=("$arg")
+    fi
+done
+
+# Add --cgroup-parent if CGROUP_PARENT is set
+if [ -n "${CGROUP_PARENT:-}" ]; then
+    DOCKER_ARGS+=("--cgroup-parent=$CGROUP_PARENT")
+fi
+
+# Helper function to build image with cache check
+build_image() {
+    local name=$1
+    shift
+    if [ "$CACHE" = true ] && docker image inspect "$name" > /dev/null 2>&1; then
+        echo "Image $name already exists, skipping build"
+        return 0
+    fi
+    docker build -t "$name" "${DOCKER_ARGS[@]}" "$@" || exit -1
+}
+
 #docker build -t ghcr.io/aixcc-finals/base-runner "$@" $DIR/base-runner
 #docker build -t ghcr.io/aixcc-finals/base-image "$@" $DIR/base-image
 cp $DIR/../../../../uniafl/src/msa/manager/manager.c $DIR/multilang-clang/manager.cpp
@@ -25,9 +52,9 @@ rsync -av --delete \
 	--exclude='symcc-fuzzing-engine/build/' \
 	$DIR/base-builder/symcc-binaries/ 2>&1 > /dev/null
 pushd $DIR/base-builder/symcc-binaries && ./clean.sh && popd
-docker build -t multilang-clang "$@" $DIR/multilang-clang || exit -1
-docker build -t multilang-builder "$@" -f $DIR/base-builder/Dockerfile.multilang $DIR/base-builder || exit -1
-docker build -t multilang-builder-jvm "$@" -f $DIR/base-builder-jvm/Dockerfile.multilang $DIR/base-builder-jvm || exit -1
+build_image multilang-clang $DIR/multilang-clang
+build_image multilang-builder -f $DIR/base-builder/Dockerfile.multilang $DIR/base-builder
+build_image multilang-builder-jvm -f $DIR/base-builder-jvm/Dockerfile.multilang $DIR/base-builder-jvm
 #docker build -t multilang-builder-rust "$@" -f $DIR/base-builder-rust/Dockerfile.multilang $DIR/base-builder-rust
 #docker build -t multilang-builder-go "$@" -f $DIR/base-builder-go/Dockerfile.multilang $DIR/base-builder-go
 #docker build -t multilang-builder-python "$@" -f $DIR/base-builder-python/Dockerfile.multilang $DIR/base-builder-python

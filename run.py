@@ -408,7 +408,10 @@ def build_crs(args):
     cache = args.get("cache", False)
     logger.info(prefix + "Build OSS-fuzz base images")
     if args.get("build_base_img", False):
-        run([OSS_FUZZ / "infra/base-images/multilang-all.sh"], prefix=prefix)
+        cmd = [OSS_FUZZ / "infra/base-images/multilang-all.sh"]
+        if cache:
+            cmd.append("--cache")
+        run(cmd, prefix=prefix)
     if args.get("skip_build_crs", False):
         logger.info(prefix + "Skip building CRS docker images")
         return

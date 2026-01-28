@@ -15,7 +15,7 @@ export CGROUP_PARENT="${CGROUP_PARENT:-}"
 # Generate unique container suffix: {run_id}_{random4}
 # RUN_ID: lowercase identifier for this run
 # Random: 4-char hex to ensure uniqueness even with same RUN_ID
-RANDOM_SUFFIX=$(head -c 2 /dev/urandom | xxd -p)
+RANDOM_SUFFIX=$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')
 if [ -n "${RUN_ID:-}" ]; then
     # Sanitize RUN_ID to lowercase
     SAFE_RUN_ID=$(echo "$RUN_ID" | tr '[:upper:]' '[:lower:]')

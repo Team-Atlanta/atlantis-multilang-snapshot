@@ -48,6 +48,11 @@ HOST_OUT_DIR = os.environ.get("HOST_OUT_DIR")
 HOST_ARTIFACT_DIR = os.environ.get("HOST_ARTIFACT_DIR")
 # True when running inside container with host Docker socket
 CONTAINER_MODE = HOST_WORK_DIR is not None
+
+# Propagate CGROUP_PARENT to OSS_FUZZ_CGROUP_PARENT for helper.py
+if os.environ.get("CGROUP_PARENT"):
+    os.environ["OSS_FUZZ_CGROUP_PARENT"] = os.environ["CGROUP_PARENT"]
+
 SUPPORTED_LANGS = ["c", "c++", "cpp", "jvm"]
 CONCOLIC_COMMON_ADDITIONAL_ARGS = (
     " --engine none -e COMPILE_SYMCC=1 -e CLANG_CRASH_DIAGNOSTICS_DIR=/out"

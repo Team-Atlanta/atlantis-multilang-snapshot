@@ -1391,9 +1391,9 @@ class CP_Builder:
         self.rsync(str(target.tarball_dir) + "/", out_dir, exclude=exclude_patterns)
         self.touch_done(f"{out_dir / 'DONE'}")
         # LSP and coverage already built by target.build(), just start LSP and finalize
-        self.__start_lsp(target)
+        # self.__start_lsp(target)
         self.__finalize_tarball(target, out_dir, "coverage")
-        target.run({"init_codeindexer": True, "start_other_services": start_other_services})
+        # target.run({"init_codeindexer": True, "start_other_services": start_other_services})
 
     def build_for_symcc(self, out_dir):
         self.__prepare_ossfuzz()

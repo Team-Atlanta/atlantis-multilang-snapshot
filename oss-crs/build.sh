@@ -46,7 +46,7 @@ fi
 # Step 3: Build CRS docker images using run.py build_crs
 echo "Building CRS docker images via run.py build_crs..."
 BUILD_CRS_CMD="python3 run.py build_crs"
-if [ "${BUILD_CRS_CACHE:-}" = "1" ] || [ "${BUILD_CRS_CACHE:-}" = "true" ]; then
+if [ "${BUILD_CRS_CACHE:-}" = "1" ] || [ "${BUILD_CRS_CACHE:-}" = "true" ] || [ "${BUILD_CRS_CACHE:-}" = "True" ]; then
     BUILD_CRS_CMD="$BUILD_CRS_CMD --cache"
     echo "Cache enabled: skipping rebuild of existing images"
 fi

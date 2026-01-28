@@ -6,7 +6,7 @@ version: '3.8'
 services:
   redis:
     image: redis:latest
-    container_name: redis_${SAFE_TARGET}_${SAFE_HARNESS}
+    container_name: redis_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}
     command: redis-server --appendonly yes
     restart: unless-stopped
     cgroup_parent: ${CGROUP_PARENT:-}
@@ -16,7 +16,7 @@ services:
 
   codeindexer:
     image: crs-multilang/crs-multilang:latest
-    container_name: codeindexer_${SAFE_TARGET}_${SAFE_HARNESS}
+    container_name: codeindexer_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}
     cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
     environment:
@@ -35,7 +35,7 @@ services:
 
   joern:
     image: crs-multilang/multilang-runner-joern:latest
-    container_name: joern_${SAFE_TARGET}_${SAFE_HARNESS}
+    container_name: joern_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}
     cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
     volumes:
@@ -48,7 +48,7 @@ services:
 
   lsp:
     image: ${LSP_RUNNER:-crs-multilang/multilang-lsp-base:latest}
-    container_name: lsp_${SAFE_TARGET}_${SAFE_HARNESS}
+    container_name: lsp_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}
     restart: unless-stopped
     cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
@@ -66,7 +66,7 @@ services:
 
   crs:
     image: crs-multilang/crs-multilang:latest
-    container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}
+    container_name: crs_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}
     privileged: true
     cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
@@ -116,7 +116,7 @@ services:
 
   cleanup:
     image: docker:cli
-    container_name: cleanup_${SAFE_TARGET}_${SAFE_HARNESS}
+    container_name: cleanup_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}
     cgroup_parent: ${CGROUP_PARENT:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

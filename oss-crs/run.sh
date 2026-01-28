@@ -17,6 +17,19 @@ export SAFE_TARGET
 export SAFE_HARNESS
 export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}"
 
+# Generate unique container suffix: {run_id}_{random4}
+# RUN_ID: lowercase identifier for this run
+# Random: 4-char hex to ensure uniqueness even with same RUN_ID
+RANDOM_SUFFIX=$(head -c 2 /dev/urandom | xxd -p)
+if [ -n "${RUN_ID:-}" ]; then
+    # Sanitize RUN_ID to lowercase
+    SAFE_RUN_ID=$(echo "$RUN_ID" | tr '[:upper:]' '[:lower:]')
+    CONTAINER_SUFFIX="${SAFE_RUN_ID}_${RANDOM_SUFFIX}"
+else
+    CONTAINER_SUFFIX="${RANDOM_SUFFIX}"
+fi
+export CONTAINER_SUFFIX
+
 # Cleanup function to stop docker-compose services on signal
 cleanup() {
     echo "=== Signal received, stopping services... ==="
@@ -46,6 +59,8 @@ echo "  MEMORY_LIMIT: ${MEMORY_LIMIT:-not set}"
 echo "  CGROUP_PARENT: ${CGROUP_PARENT:-not set}"
 echo "  RUN_FUZZER_MODE: ${RUN_FUZZER_MODE:-not set}"
 echo "  CRS_INPUT_GENS: ${CRS_INPUT_GENS:-given_fuzzer}"
+echo "  RUN_ID: ${RUN_ID:-not set}"
+echo "  CONTAINER_SUFFIX: $CONTAINER_SUFFIX"
 
 # Verify Docker socket is available (using host docker daemon)
 if ! docker info > /dev/null 2>&1; then
@@ -189,7 +204,7 @@ if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
     # Use up -d + wait for mlla mode (has one-shot codeindexer service)
     # --exit-code-from implies --abort-on-container-exit which aborts when codeindexer exits
     docker compose -f "$COMPOSE_FILE" up -d
-    CRS_CONTAINER="crs_${SAFE_TARGET}_${SAFE_HARNESS}"
+    CRS_CONTAINER="crs_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}"
     echo "Waiting for crs container to complete..."
     docker wait "$CRS_CONTAINER"
     EXIT_CODE=$?

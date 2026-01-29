@@ -45,6 +45,12 @@ else
 fi
 mkdir -p "$TARBALL_DIR"
 
+if [ -f /ref.diff ]; then
+    cp /ref.diff "$TARBALL_DIR"/ref.diff
+    echo "Copied /ref.diff to "$TARBALL_DIR"/ref.diff"
+fi
+
+
 # Step 2.5: Create repo.tar.gz from source (required by run.py build)
 # CP_Builder expects repo.tar.gz to exist before building
 echo "Creating repo.tar.gz from source directory..."

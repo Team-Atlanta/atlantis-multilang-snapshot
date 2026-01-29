@@ -9,6 +9,12 @@ echo "Project name: $PROJECT_NAME"
 SOURCE_DIR=$(pwd)
 echo "Source directory: $SOURCE_DIR"
 
+# Copy ref.diff to /src if it exists
+if [ -f /ref.diff ]; then
+    cp /ref.diff /src/ref.diff
+    echo "Copied /ref.diff to /src/ref.diff"
+fi
+
 # Export CGROUP_PARENT so child processes (python3 run.py) can access it
 export CGROUP_PARENT="${CGROUP_PARENT:-}"
 

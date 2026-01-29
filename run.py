@@ -60,6 +60,7 @@ CONCOLIC_COMMON_ADDITIONAL_ARGS = (
 SYMCC_INSTRUMENTATION_ADDITIONAL_ARGS = CONCOLIC_COMMON_ADDITIONAL_ARGS
 LSP_BASE = "multilang-lsp-base"
 DOCKER_REGISTRY_BASE = ""
+OSS_CRS_REF_DIFF_PATH = '/ref.diff'
 
 
 class OtherDockers:
@@ -1511,9 +1512,22 @@ class CP_Builder:
         repo_tar = self.tar_dir / "repo.tar.gz"
         repo = self.get_workdir("repo")
         src_dir = repo / self.focus
-        diff_path = self.workdir / "diff/ref.diff"
-        if src_dir.exists() and diff_path.exists():
-            return (src_dir, diff_path)
+
+        # Check if /ref.diff exists first (top priority)
+        use_oss_crs_ref_diff = Path(OSS_CRS_REF_DIFF_PATH).exists()
+
+        if use_oss_crs_ref_diff:
+            # When using /ref.diff, only check if src_dir exists for early return
+            if src_dir.exists():
+                self.log(f"Using ref.diff from {OSS_CRS_REF_DIFF_PATH} (no patch applied)")
+                return (src_dir, Path(OSS_CRS_REF_DIFF_PATH))
+        else:
+            # Original early return check for diff.tar.gz case
+            diff_path = self.workdir / "diff/ref.diff"
+            if src_dir.exists() and diff_path.exists():
+                return (src_dir, diff_path)
+
+        # Untar repo
         self.__untar(repo_tar, repo)
         if not src_dir.exists():
             candidates = list(
@@ -1522,6 +1536,12 @@ class CP_Builder:
             self.focus = candidates[0]
             src_dir = repo / self.focus
 
+        # If using /ref.diff, return now (skip diff.tar.gz entirely)
+        if use_oss_crs_ref_diff:
+            self.log(f"Using ref.diff from {OSS_CRS_REF_DIFF_PATH} (no patch applied)")
+            return (src_dir, Path(OSS_CRS_REF_DIFF_PATH))
+
+        # Fallback: Use diff.tar.gz if available
         diff_tar = self.tar_dir / "diff.tar.gz"
         diff_path = None
         if diff_tar.exists():

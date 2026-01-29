@@ -30,12 +30,6 @@ else
 fi
 export CONTAINER_SUFFIX
 
-# Copy ref.diff to /src if it exists
-if [ -f /ref.diff ]; then
-    cp /ref.diff /src/ref.diff
-    echo "Copied /ref.diff to /src/ref.diff"
-fi
-
 # Cleanup function to stop docker-compose services on signal
 cleanup() {
     echo "=== Signal received, stopping services... ==="

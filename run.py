@@ -687,7 +687,7 @@ class Target:
         self.__build_cp_image()
         self.__build_basic(src, args)
         self.build_coverage_only(args)
-        self.build_symcc_only(args)
+        # self.build_symcc_only(args)
         self.build_lsp(args)
         return src
 

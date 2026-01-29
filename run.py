@@ -831,8 +831,8 @@ class Target:
                 self.work_dir() / "compile_commands.json",
                 out_dir / "compile_commands.json",
             )
-        except:
-            self.log(f"Fail to LSP build")
+        except Exception as e:
+            self.log(f"Fail to LSP build: {e}")
         return True
 
     def __build_lsp_runner(self, args):

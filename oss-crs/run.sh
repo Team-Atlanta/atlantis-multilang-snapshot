@@ -19,17 +19,17 @@ export SAFE_HARNESS
 # Generate unique container suffix: {run_id}_{random4}
 # RUN_ID: lowercase identifier for this run
 # Random: 4-char hex to ensure uniqueness even with same RUN_ID
-RANDOM_SUFFIX=$(head -c 2 /dev/urandom | od -An -tx1 | tr -d ' \n')
+RANDOM_SUFFIX=$(head -c 3 /dev/urandom | od -An -tx1 | tr -d ' \n')
 if [ -n "${RUN_ID:-}" ]; then
     # Sanitize RUN_ID to lowercase
     SAFE_RUN_ID=$(echo "$RUN_ID" | tr '[:upper:]' '[:lower:]')
-    CONTAINER_SUFFIX="${SAFE_RUN_ID}_${RANDOM_SUFFIX}"
+    CONTAINER_SUFFIX="${RANDOM_SUFFIX}"
 else
     CONTAINER_SUFFIX="${RANDOM_SUFFIX}"
 fi
 export CONTAINER_SUFFIX
 
-export COMPOSE_PROJECT_NAME="${SAFE_RUN_ID}_${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}"
+export COMPOSE_PROJECT_NAME="${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}"
 
 # Cleanup function to stop docker-compose services on signal
 cleanup() {
@@ -139,7 +139,7 @@ fi
 # Set unique external network name for standalone mode
 if [ "${CRS_NETWORK_EXTERNAL}" = "false" ]; then
     # Use unique network name per project/harness to avoid conflicts
-    export CRS_EXTERNAL_NETWORK="${SAFE_RUN_ID}_${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}_external"
+    export CRS_EXTERNAL_NETWORK="${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}_external"
     echo "External network (local): $CRS_EXTERNAL_NETWORK"
 fi
 
@@ -205,7 +205,7 @@ if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
     # Use up -d + wait for mlla mode (has one-shot codeindexer service)
     # --exit-code-from implies --abort-on-container-exit which aborts when codeindexer exits
     docker compose -f "$COMPOSE_FILE" up -d
-    CRS_CONTAINER="${SAFE_RUN_ID}_crs_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}"
+    CRS_CONTAINER="crs_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}"
     echo "Waiting for crs container to complete..."
     docker wait "$CRS_CONTAINER"
     EXIT_CODE=$?

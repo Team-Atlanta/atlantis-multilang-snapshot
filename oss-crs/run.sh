@@ -205,7 +205,7 @@ if [ "$NEEDS_OTHER_SERVICES" = "true" ]; then
     # Use up -d + wait for mlla mode (has one-shot codeindexer service)
     # --exit-code-from implies --abort-on-container-exit which aborts when codeindexer exits
     docker compose -f "$COMPOSE_FILE" up -d
-    CRS_CONTAINER="crs_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}"
+    CRS_CONTAINER="${SAFE_RUN_ID}_crs_${SAFE_TARGET}_${SAFE_HARNESS}_${CONTAINER_SUFFIX}"
     echo "Waiting for crs container to complete..."
     docker wait "$CRS_CONTAINER"
     EXIT_CODE=$?

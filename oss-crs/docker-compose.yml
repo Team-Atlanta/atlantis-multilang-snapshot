@@ -6,7 +6,7 @@ version: '3.8'
 services:
   redis:
     image: redis:latest
-    container_name: redis
+    # container_name: redis
     command: redis-server --appendonly yes
     restart: unless-stopped
     cgroup_parent: ${CGROUP_PARENT:-}
@@ -16,7 +16,7 @@ services:
 
   crs:
     image: crs-multilang/crs-multilang:latest
-    container_name: crs
+    # container_name: crs
     privileged: true
     cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
@@ -59,7 +59,7 @@ services:
 
   cleanup:
     image: docker:cli
-    container_name: cleanup
+    # container_name: cleanup
     cgroup_parent: ${CGROUP_PARENT:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

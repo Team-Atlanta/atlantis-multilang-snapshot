@@ -139,7 +139,7 @@ fi
 # Set unique external network name for standalone mode
 if [ "${CRS_NETWORK_EXTERNAL}" = "false" ]; then
     # Use unique network name per project/harness to avoid conflicts
-    export CRS_EXTERNAL_NETWORK="${SAFE_TARGET}_${SAFE_HARNESS}_external"
+    export CRS_EXTERNAL_NETWORK="${SAFE_RUN_ID}_${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}_external"
     echo "External network (local): $CRS_EXTERNAL_NETWORK"
 fi
 

@@ -15,7 +15,6 @@ SAFE_TARGET=$(sanitize_name "${CRS_TARGET:-crs}")
 SAFE_HARNESS=$(sanitize_name "$HARNESS_NAME")
 export SAFE_TARGET
 export SAFE_HARNESS
-export COMPOSE_PROJECT_NAME="${SAFE_RUN_ID}_${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}"
 
 # Generate unique container suffix: {run_id}_{random4}
 # RUN_ID: lowercase identifier for this run
@@ -29,6 +28,8 @@ else
     CONTAINER_SUFFIX="${RANDOM_SUFFIX}"
 fi
 export CONTAINER_SUFFIX
+
+export COMPOSE_PROJECT_NAME="${SAFE_RUN_ID}_${SAFE_TARGET}_${SAFE_HARNESS}_${RANDOM_SUFFIX}"
 
 # Cleanup function to stop docker-compose services on signal
 cleanup() {

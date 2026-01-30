@@ -16,7 +16,7 @@ services:
 
   crs:
     image: crs-multilang/crs-multilang:latest
-    # container_name: crs
+    container_name: ${COMPOSE_PROJECT_NAME}_crs
     privileged: true
     cgroup_parent: ${CGROUP_PARENT:-}
     cpuset: ${CPUSET_CPUS:-0-7}
